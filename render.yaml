@@ -1,15 +1,13 @@
 services:
   - type: web
     name: eduflow
-    runtime: node
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    runtime: docker
     envVars:
       - key: NODE_ENV
         value: production
       - key: PROJECTS_DIR
-        value: /opt/render/project/src/projects
+        value: /data/projects
     disk:
       name: eduflow-data
-      mountPath: /opt/render/project/src/projects
+      mountPath: /data/projects
       sizeGB: 1
