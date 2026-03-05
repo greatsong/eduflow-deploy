@@ -81,14 +81,14 @@ app.use('/api/beta', betaRouter);
 app.use('/api/compare', compareRouter);
 
 // API 404 핸들러
-app.all('/api/*', (req, res) => {
+app.all('/api/{*path}', (req, res) => {
   res.status(404).json({ message: `API 경로를 찾을 수 없습니다: ${req.method} ${req.path}` });
 });
 
 // 프로덕션: 프론트엔드 정적 파일 서빙
 const clientDist = path.resolve(__dirname, '..', 'client', 'dist');
 app.use(express.static(clientDist));
-app.get('*', (req, res) => {
+app.get('{*path}', (req, res) => {
   res.sendFile(path.join(clientDist, 'index.html'));
 });
 
