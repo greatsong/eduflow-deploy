@@ -47,10 +47,12 @@ function shuffle(arr) {
 export default function ModelCompare() {
   const [allModels, setAllModels] = useState([]);
   const [prompt, setPrompt] = useState('');
-  const [blind, setBlind] = useState(true);
+  // 'blind' | 'open' | 'auto'
+  const [mode, setMode] = useState('blind');
   const [selectedModelIds, setSelectedModelIds] = useState([]);
 
   // idle | prelim | prelim-rank | finals-prompt | finals | finals-rank | done
+  // auto 모드: idle | auto-running | auto-evaluating | auto-done
   const [phase, setPhase] = useState('idle');
   const [round, setRound] = useState(0);
   const [results, setResults] = useState({});
@@ -62,6 +64,11 @@ export default function ModelCompare() {
   const [roundHistory, setRoundHistory] = useState([]);
   const [roundPrompts, setRoundPrompts] = useState([]);
   const abortRef = useRef(null);
+
+  // AI 자동 평가 상태
+  const [autoEvalResult, setAutoEvalResult] = useState(null);
+  const [autoEvalText, setAutoEvalText] = useState('');
+  const [autoJudgeModel, setAutoJudgeModel] = useState('claude-sonnet-4-6');
 
   useEffect(() => {
     apiFetch('/api/models').then(({ models }) => setAllModels(models)).catch(() => {});
@@ -77,11 +84,13 @@ export default function ModelCompare() {
     return allModels.filter((m) => keys[m.provider]);
   }, [allModels]);
 
-  // 공개 모드: 체크된 모델들
+  const blind = mode === 'blind';
+
+  // 공개/자동 모드: 체크된 모델들
   const modelsToRun = useMemo(() => {
-    if (blind) return availableModels;
+    if (mode === 'blind') return availableModels;
     return availableModels.filter((m) => selectedModelIds.includes(m.id));
-  }, [blind, availableModels, selectedModelIds]);
+  }, [mode, availableModels, selectedModelIds]);
 
   const allDone = useMemo(() => {
     const vals = Object.values(results);
@@ -101,7 +110,7 @@ export default function ModelCompare() {
   };
 
   const runModels = useCallback(async (modelIds, activePrompt) => {
-    const ordered = blind ? shuffle(modelIds) : modelIds;
+    const ordered = mode === 'blind' ? shuffle(modelIds) : modelIds;
     setShuffledOrder(ordered);
     setRunning(true);
     setRankings([]);
@@ -149,7 +158,7 @@ export default function ModelCompare() {
     } catch (err) {
       if (err.name !== 'AbortError') console.error(err);
     } finally { setRunning(false); abortRef.current = null; }
-  }, [blind]);
+  }, [mode]);
 
   useEffect(() => {
     if (allDone && !running) {
@@ -216,7 +225,79 @@ export default function ModelCompare() {
   const resetAll = () => {
     setPhase('idle'); setRound(0); setResults({}); setShuffledOrder([]);
     setRankings([]); setTop5([]); setRoundScores({}); setRoundHistory([]); setRoundPrompts([]); setPrompt('');
+    setAutoEvalResult(null); setAutoEvalText('');
   };
+
+  // AI 자동 평가 실행
+  const runAutoEvaluate = useCallback(async () => {
+    if (!prompt.trim() || modelsToRun.length < 2) return;
+    const modelIds = modelsToRun.map((m) => m.id);
+    setShuffledOrder(modelIds);
+    setRunning(true);
+    setPhase('auto-running');
+    setAutoEvalResult(null);
+    setAutoEvalText('');
+    const init = {};
+    for (const m of modelIds) init[m] = { text: '', status: 'waiting', elapsed: null, charCount: null };
+    setResults(init);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const res = await fetch(`${API_BASE}/api/compare/auto-evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ models: modelIds, prompt: prompt, judgeModel: autoJudgeModel }),
+        signal: controller.signal,
+      });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6);
+          if (raw === '[DONE]') break;
+          try {
+            const data = JSON.parse(raw);
+            if (data.type === 'start' || data.type === 'text' || data.type === 'complete' || data.type === 'error') {
+              setResults((prev) => {
+                const copy = { ...prev };
+                const mid = data.modelId;
+                if (!mid) return copy;
+                if (data.type === 'start') copy[mid] = { ...copy[mid], status: 'streaming' };
+                else if (data.type === 'text') copy[mid] = { ...copy[mid], text: (copy[mid]?.text || '') + data.content };
+                else if (data.type === 'complete') copy[mid] = { ...copy[mid], status: 'done', elapsed: data.elapsed, charCount: data.charCount };
+                else if (data.type === 'error') copy[mid] = { ...copy[mid], status: 'error', error: data.message };
+                return copy;
+              });
+            }
+            if (data.type === 'phase' && data.phase === 'evaluating') {
+              setPhase('auto-evaluating');
+            }
+            if (data.type === 'evaluate-text') {
+              setAutoEvalText((prev) => prev + data.content);
+            }
+            if (data.type === 'evaluate-result') {
+              setAutoEvalResult(data.result);
+              setPhase('auto-done');
+            }
+            if (data.type === 'evaluate-error') {
+              setAutoEvalText((prev) => prev + '\n[평가 오류: ' + data.message + ']');
+              setPhase('auto-done');
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error(err);
+    } finally { setRunning(false); abortRef.current = null; }
+  }, [prompt, modelsToRun, autoJudgeModel]);
 
   const toggleModelSelection = (id) => {
     setSelectedModelIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -241,6 +322,7 @@ export default function ModelCompare() {
     : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
 
   const canEditPrompt = phase === 'idle' || phase === 'finals-prompt';
+  const isAutoMode = mode === 'auto';
 
   // 프로바이더별 그룹핑 (공개 모드 체크박스용)
   const modelsByProvider = useMemo(() => {
@@ -260,15 +342,20 @@ export default function ModelCompare() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">AI 모델 비교</h2>
           <p className="text-gray-500 mt-1">
-            {blind ? '블라인드 토너먼트: 익명 비교 → Top 5 → 3회 결선' : '공개 비교: 모델을 직접 선택하고 결과를 나란히 비교'}
+            {mode === 'blind' ? '블라인드 토너먼트: 익명 비교 → Top 5 → 3회 결선'
+              : mode === 'open' ? '공개 비교: 모델을 직접 선택하고 결과를 나란히 비교'
+              : 'AI 자동 평가: 선택한 모델들의 응답을 AI가 자동으로 채점하고 순위를 매깁니다'}
           </p>
         </div>
         <div className="flex items-center gap-3">
           {phase !== 'idle' && (
             <>
-              <span className="px-3 py-1.5 bg-indigo-100 text-indigo-800 rounded-lg text-sm font-medium">
+              <span className={`px-3 py-1.5 rounded-lg text-sm font-medium ${isAutoMode ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'}`}>
                 {phase === 'prelim' || phase === 'prelim-rank' ? '예선'
                   : phase === 'done' ? '최종 결과'
+                  : phase === 'auto-running' ? '모델 생성 중'
+                  : phase === 'auto-evaluating' ? 'AI 평가 중'
+                  : phase === 'auto-done' ? 'AI 평가 완료'
                   : phase === 'finals-prompt' ? `결선 ${round}회 준비`
                   : `결선 ${round}/${TOTAL_ROUNDS}회`}
               </span>
@@ -281,25 +368,24 @@ export default function ModelCompare() {
       {/* 모드 토글 — idle 상태에서만 변경 가능 */}
       {phase === 'idle' && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <span className="text-sm font-medium text-gray-700">비교 방식</span>
             <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-              <button onClick={() => setBlind(true)}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${blind ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                블라인드 (익명)
-              </button>
-              <button onClick={() => setBlind(false)}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${!blind ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                공개 (모델 선택)
-              </button>
+              {[
+                { key: 'blind', label: '블라인드 (익명)' },
+                { key: 'open', label: '공개 (모델 선택)' },
+                { key: 'auto', label: 'AI 자동 평가' },
+              ].map(({ key, label }) => (
+                <button key={key} onClick={() => setMode(key)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${mode === key ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {label}
+                </button>
+              ))}
             </div>
-            <span className="text-xs text-gray-400">
-              {blind ? '모든 모델을 익명으로 비교합니다' : '원하는 모델만 골라서 비교합니다'}
-            </span>
           </div>
 
-          {/* 공개 모드: 모델 체크박스 */}
-          {!blind && (
+          {/* 공개/자동 모드: 모델 체크박스 */}
+          {mode !== 'blind' && (
             <div className="mt-4 space-y-3">
               {Object.entries(modelsByProvider).map(([provider, models]) => (
                 <div key={provider}>
@@ -337,13 +423,25 @@ export default function ModelCompare() {
                 </div>
               ))}
               <p className="text-xs text-gray-400">{selectedModelIds.length}개 선택됨 {selectedModelIds.length < 2 && '(최소 2개 선택)'}</p>
+              {mode === 'auto' && (
+                <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100">
+                  <span className="text-sm font-medium text-gray-600">심사위원 모델</span>
+                  <select value={autoJudgeModel} onChange={(e) => setAutoJudgeModel(e.target.value)}
+                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
+                    {allModels.map((m) => (
+                      <option key={m.id} value={m.id}>{m.display_name} ({m.tier})</option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-gray-400">이 모델이 다른 모델들의 응답을 평가합니다</span>
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {/* 진행률 */}
-      {phase !== 'idle' && (
+      {/* 진행률 — 블라인드/공개 모드에서만 */}
+      {phase !== 'idle' && !isAutoMode && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center gap-2">
             {['예선', '1회', '2회', '3회', '결과'].map((label, i) => {
@@ -356,6 +454,27 @@ export default function ModelCompare() {
                 <div key={label} className="flex-1">
                   <div className={`h-2 rounded-full ${done ? 'bg-indigo-500' : active ? 'bg-indigo-300 animate-pulse' : 'bg-gray-200'}`} />
                   <p className={`text-xs mt-1 text-center ${active ? 'text-indigo-700 font-medium' : done ? 'text-indigo-500' : 'text-gray-400'}`}>{label}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* AI 자동 평가 진행 상태 */}
+      {isAutoMode && phase !== 'idle' && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2">
+            {['모델 생성', 'AI 평가', '결과'].map((label, i) => {
+              const active = (i === 0 && phase === 'auto-running')
+                || (i === 1 && phase === 'auto-evaluating')
+                || (i === 2 && phase === 'auto-done');
+              const done = (i === 0 && (phase === 'auto-evaluating' || phase === 'auto-done'))
+                || (i === 1 && phase === 'auto-done');
+              return (
+                <div key={label} className="flex-1">
+                  <div className={`h-2 rounded-full ${done ? 'bg-emerald-500' : active ? 'bg-emerald-300 animate-pulse' : 'bg-gray-200'}`} />
+                  <p className={`text-xs mt-1 text-center ${active ? 'text-emerald-700 font-medium' : done ? 'text-emerald-500' : 'text-gray-400'}`}>{label}</p>
                 </div>
               );
             })}
@@ -387,13 +506,20 @@ export default function ModelCompare() {
             placeholder={phase === 'finals-prompt' ? `${round}회차에 사용할 프롬프트를 입력하세요...` : '비교할 프롬프트를 입력하세요...'} />
           {phase === 'idle' && (
             <div className="flex items-center gap-3">
-              <button onClick={startTournament} disabled={!prompt.trim() || modelsToRun.length < 2}
-                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all">
-                {blind ? `토너먼트 시작 (${modelsToRun.length}개 모델)` : `비교 시작 (${modelsToRun.length}개 모델)`}
-              </button>
+              {mode === 'auto' ? (
+                <button onClick={runAutoEvaluate} disabled={!prompt.trim() || modelsToRun.length < 2}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg text-sm font-medium hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-all">
+                  AI 자동 평가 시작 ({modelsToRun.length}개 모델)
+                </button>
+              ) : (
+                <button onClick={startTournament} disabled={!prompt.trim() || modelsToRun.length < 2}
+                  className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all">
+                  {blind ? `토너먼트 시작 (${modelsToRun.length}개 모델)` : `비교 시작 (${modelsToRun.length}개 모델)`}
+                </button>
+              )}
               {modelsToRun.length < 2 && (
                 <p className="text-xs text-orange-600">
-                  {blind ? '2개 이상 프로바이더의 API 키를 설정해주세요' : '2개 이상 모델을 선택해주세요'}
+                  {mode === 'blind' ? '2개 이상 프로바이더의 API 키를 설정해주세요' : '2개 이상 모델을 선택해주세요'}
                 </p>
               )}
             </div>
@@ -408,7 +534,7 @@ export default function ModelCompare() {
       )}
 
       {/* 중지 -> 바로 투표 */}
-      {running && (phase === 'prelim' || phase === 'finals') && (
+      {running && (phase === 'prelim' || phase === 'finals' || phase === 'auto-running') && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
           <p className="text-red-700 text-sm mb-2">생성이 너무 길면 중지하고 현재까지의 결과로 투표할 수 있습니다</p>
           <button onClick={() => {
@@ -425,6 +551,7 @@ export default function ModelCompare() {
             });
             if (phase === 'prelim') setPhase('prelim-rank');
             if (phase === 'finals') setPhase('finals-rank');
+            if (phase === 'auto-running') setPhase('auto-done');
           }}
             className="px-6 py-2.5 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors">
             중지 → 바로 투표
@@ -550,8 +677,83 @@ export default function ModelCompare() {
         </div>
       )}
 
+      {/* AI 자동 평가 결과 */}
+      {phase === 'auto-done' && autoEvalResult && (
+        <div className="bg-white rounded-xl border-2 border-emerald-300 p-6">
+          <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">AI 자동 평가 결과</h3>
+          <p className="text-sm text-gray-500 text-center mb-4">심사위원: {getModelInfo(autoJudgeModel).display_name}</p>
+
+          {/* 순위 */}
+          {autoEvalResult.ranking?.length > 0 && (
+            <div className="space-y-3 mb-6">
+              {autoEvalResult.ranking.map((modelId, i) => {
+                const info = getModelInfo(modelId);
+                const scores = autoEvalResult.evaluations?.[modelId];
+                const style = RANK_STYLES[i] || { bg: 'bg-gray-300', text: 'text-white' };
+                return (
+                  <div key={modelId} className={`flex items-center gap-4 p-4 rounded-xl ${i === 0 ? 'bg-emerald-50 border-2 border-emerald-300' : 'bg-gray-50'}`}>
+                    <span className={`w-10 h-10 rounded-full ${style.bg} ${style.text} flex items-center justify-center text-lg font-bold shrink-0`}>{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-sm font-medium px-2 py-0.5 rounded-full ${PROVIDER_BADGES[info.provider] || 'bg-gray-100'}`}>{info.display_name}</span>
+                        <span className="text-xs text-gray-400">{info.tier}</span>
+                        {i === 0 && <span className="text-emerald-600 font-bold">CHAMPION</span>}
+                      </div>
+                      {scores && (
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
+                          {[
+                            { key: 'accuracy', label: '정확성' },
+                            { key: 'structure', label: '구조화' },
+                            { key: 'educational', label: '교육적 가치' },
+                            { key: 'korean', label: '한국어' },
+                            { key: 'creativity', label: '창의성' },
+                          ].map(({ key, label }) => (
+                            <div key={key} className="flex items-center gap-1">
+                              <span className="text-[10px] text-gray-400">{label}</span>
+                              <span className={`text-xs font-bold ${scores[key] >= 8 ? 'text-emerald-600' : scores[key] >= 6 ? 'text-blue-600' : 'text-gray-600'}`}>{scores[key]}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {scores?.comment && <p className="text-xs text-gray-500 mt-1">{scores.comment}</p>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      {scores && <p className="text-xl font-bold text-gray-900">{scores.total}점</p>}
+                      <p className="text-xs text-gray-400">/ 50점</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 종합 요약 */}
+          {autoEvalResult.summary && (
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-1">종합 평가</p>
+              <p className="text-sm text-gray-600">{autoEvalResult.summary}</p>
+            </div>
+          )}
+
+          <div className="text-center">
+            <button onClick={resetAll} className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700">새 비교</button>
+          </div>
+        </div>
+      )}
+
+      {/* AI 평가 중 텍스트 표시 */}
+      {phase === 'auto-evaluating' && (
+        <div className="bg-white rounded-xl border border-emerald-200 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <h3 className="text-sm font-semibold text-emerald-700">{getModelInfo(autoJudgeModel).display_name}이(가) 평가 중...</h3>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 max-h-[200px] overflow-y-auto text-xs text-gray-500 font-mono whitespace-pre-wrap">{autoEvalText || '분석 중...'}</div>
+        </div>
+      )}
+
       {/* 카드 그리드 */}
-      {shuffledOrder.length > 0 && phase !== 'done' && phase !== 'finals-prompt' && (
+      {shuffledOrder.length > 0 && phase !== 'done' && phase !== 'auto-done' && phase !== 'finals-prompt' && (
         <div className={`grid gap-4 ${gridCols}`}>
           {shuffledOrder.map((modelId, idx) => {
             const r = results[modelId] || {};
