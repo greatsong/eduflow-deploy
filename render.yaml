@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: eduflow
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+    disk:
+      name: eduflow-data
+      mountPath: /opt/render/project/src/projects
+      sizeGB: 1

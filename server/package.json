@@ -1,0 +1,21 @@
+{
+  "name": "eduflow-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/genai": "^1.44.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "execa": "^9.5.0",
+    "express": "^5.0.1",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^6.25.0",
+    "p-limit": "^6.1.0"
+  }
+}
