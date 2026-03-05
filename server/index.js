@@ -20,8 +20,17 @@ config({ path: path.resolve(__dirname, '..', '.env') }); // 루트 .env 로드
 const app = express();
 const PORT = process.env.PORT || 7829;
 
-// 미들웨어
-app.use(cors());
+// 미들웨어 — 프로덕션에서는 same-origin, 개발에서는 localhost 허용
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:7830', 'http://localhost:7829'];
+app.use(cors({
+  origin: (origin, cb) => {
+    // same-origin (origin 없음) 또는 허용 목록
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(null, false);
+  },
+}));
 app.use(express.json({ limit: '10mb' }));
 
 // 헬스체크
@@ -71,14 +80,28 @@ app.use('/api/portfolio', portfolioRouter);
 app.use('/api/beta', betaRouter);
 app.use('/api/compare', compareRouter);
 
-// 에러 핸들링
-app.use(errorHandler);
+// API 404 핸들러
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ message: `API 경로를 찾을 수 없습니다: ${req.method} ${req.path}` });
+});
 
 // 프로덕션: 프론트엔드 정적 파일 서빙
 const clientDist = path.resolve(__dirname, '..', 'client', 'dist');
 app.use(express.static(clientDist));
 app.get('*', (req, res) => {
   res.sendFile(path.join(clientDist, 'index.html'));
+});
+
+// 에러 핸들링 (반드시 마지막)
+app.use(errorHandler);
+
+// 전역 예외 처리
+process.on('unhandledRejection', (reason) => {
+  console.error('[EduFlow] Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[EduFlow] Uncaught Exception:', err);
+  process.exit(1);
 });
 
 app.listen(PORT, () => {
