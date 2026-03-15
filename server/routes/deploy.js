@@ -43,13 +43,15 @@ router.get('/status', asyncHandler(async (req, res) => {
 
 // POST /api/projects/:id/deploy/mkdocs/config - MkDocs 설정 생성
 router.post('/mkdocs/config', asyncHandler(async (req, res) => {
-  const { siteName, theme } = req.body;
+  const { siteName, theme, colorTheme, creator } = req.body;
   const dep = new Deployment(projectPath(req.params.id));
   await dep.init();
 
   const result = await dep.generateMkdocsConfig(
     siteName || '교육자료',
-    theme || 'material'
+    theme || 'material',
+    creator || null,
+    colorTheme || 'indigo'
   );
   res.json(result);
 }));
@@ -125,18 +127,45 @@ router.get('/docx/download', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/projects/:id/deploy/github - GitHub Pages 배포
+// 사용자 자신의 GitHub 계정으로만 배포 (GitHub 연동 필수)
+// 배포 성공 시 포트폴리오 자동 등록 (필수)
 router.post('/github', asyncHandler(async (req, res) => {
-  const { repoName } = req.body;
+  const { repoName, creator } = req.body;
   if (!repoName) {
     return res.status(400).json({ message: '저장소 이름이 필요합니다' });
+  }
+
+  // GitHub 연동 필수: 사용자 토큰이 없으면 배포 불가
+  if (!req.user?.googleId) {
+    return res.status(401).json({ message: '로그인이 필요합니다.' });
+  }
+
+  const userStore = req.app.locals.userStore;
+  if (!userStore) {
+    return res.status(500).json({ message: '서버 설정 오류: UserStore가 초기화되지 않았습니다.' });
+  }
+
+  const github = await userStore.getGitHubToken(req.user.googleId);
+  if (!github?.token) {
+    return res.status(400).json({ message: 'GitHub 연동이 필요합니다. 배포 페이지에서 GitHub 계정을 연동해주세요.' });
   }
 
   const dep = new Deployment(projectPath(req.params.id));
   await dep.init();
 
-  const result = await dep.deployToGitHub(repoName);
+  // 사용자 GitHub 토큰으로 배포
+  console.log(`[EduFlow] GitHub API 배포 요청: ${repoName} (사용자: ${github.username})`);
+  const result = await dep.deployToGitHubAPI(repoName, github.token, creator || null);
 
-  // 배포 성공 시 deployment_info.json 저장 + 포트폴리오 자동 갱신
+  // 배포 성공 시 포트폴리오 등록 (필수 — 서버 토큰 사용)
+  if (result.success && result.site_url) {
+    const portfolioResult = await dep.updatePortfolioAPI(
+      repoName, result.site_url, result.repo_url, result.username, creator
+    );
+    result.portfolio = portfolioResult;
+  }
+
+  // 배포 성공 시 deployment_info.json 저장 + 이력 기록
   if (result.success && result.site_url) {
     const { writeFile } = await import('fs/promises');
     const infoPath = join(projectPath(req.params.id), 'deployment_info.json');
@@ -145,13 +174,20 @@ router.post('/github', asyncHandler(async (req, res) => {
       repo_url: result.repo_url,
       username: result.username,
       deployed_at: new Date().toISOString(),
+      deploy_method: 'github_api',
+      ...(creator?.name && { creatorName: creator.name }),
+      ...(creator?.affiliation && { creatorAffiliation: creator.affiliation }),
     }, null, 2), 'utf-8');
 
-    // 포트폴리오 자동 갱신 (실패해도 배포 결과에는 영향 없음)
-    const portfolioResult = await dep.updatePortfolio(
-      repoName, result.site_url, result.repo_url, result.username
-    );
-    result.portfolio = portfolioResult;
+    // UserStore에 프로젝트 배포 이력 저장
+    try {
+      await userStore.addUserProject(req.user.googleId, {
+        repoName,
+        siteUrl: result.site_url,
+        repoUrl: result.repo_url,
+        username: result.username,
+      });
+    } catch { /* 배포 결과에 영향 없음 */ }
   }
 
   res.json(result);

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '../stores/projectStore';
 import { apiFetch } from '../api/client';
+import { getUserInfo, getAuthToken } from '../components/EntryForm';
 
 const TABS = ['🌐 MkDocs 웹사이트', '📄 DOCX 문서', '🔍 미리보기'];
 
@@ -10,13 +11,28 @@ export default function Deployment() {
   const { currentProject } = useProjectStore();
   const [activeTab, setActiveTab] = useState(0);
   const [status, setStatus] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [githubUser, setGithubUser] = useState(null); // { username, avatarUrl }
 
   useEffect(() => {
     if (!currentProject) return;
+    setStatusLoading(true);
     apiFetch(`/api/projects/${currentProject.name}/deploy/status`)
       .then(setStatus)
-      .catch(() => setStatus(null));
+      .catch(() => setStatus(null))
+      .finally(() => setStatusLoading(false));
   }, [currentProject]);
+
+  // GitHub 연동 상태 확인
+  useEffect(() => {
+    apiFetch('/api/auth/github/status')
+      .then(data => {
+        if (data.connected) {
+          setGithubUser({ username: data.username, avatarUrl: data.avatarUrl });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   if (!currentProject) {
     return (
@@ -62,7 +78,7 @@ export default function Deployment() {
             onClick={() => setActiveTab(i)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === i
-                ? 'border-blue-600 text-blue-600'
+                ? 'border-emerald-600 text-emerald-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -72,9 +88,17 @@ export default function Deployment() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {activeTab === 0 && <MkDocsTab project={currentProject} status={status} />}
-        {activeTab === 1 && <DocxTab project={currentProject} status={status} />}
-        {activeTab === 2 && <PreviewTab project={currentProject} status={status} />}
+        {activeTab === 0 && (
+          <MkDocsTab
+            project={currentProject}
+            status={status}
+            statusLoading={statusLoading}
+            githubUser={githubUser}
+            setGithubUser={setGithubUser}
+          />
+        )}
+        {activeTab === 1 && <DocxTab project={currentProject} status={status} statusLoading={statusLoading} />}
+        {activeTab === 2 && <PreviewTab project={currentProject} status={status} statusLoading={statusLoading} />}
       </div>
 
       {/* 포트폴리오로 */}
@@ -136,9 +160,25 @@ function suggestRepoNames(projectName) {
   return [...new Set(suggestions)].filter(Boolean).slice(0, 3);
 }
 
-function MkDocsTab({ project, status }) {
+const COLOR_THEMES = [
+  { id: 'indigo', label: '인디고/퍼플', primary: 'indigo', accent: 'deep purple', colors: ['#4f46e5', '#7c3aed'], desc: '고급스럽고 세련된' },
+  { id: 'teal', label: '에메랄드/틸', primary: 'teal', accent: 'green', colors: ['#0d9488', '#10b981'], desc: '자연적이고 차분한' },
+  { id: 'amber', label: '앰버/오렌지', primary: 'deep orange', accent: 'amber', colors: ['#ea580c', '#f59e0b'], desc: '따뜻하고 친근한' },
+  { id: 'blue', label: '블루/스카이', primary: 'blue', accent: 'cyan', colors: ['#2563eb', '#0ea5e9'], desc: '신뢰감 있는 클래식' },
+  { id: 'rose', label: '로즈/핑크', primary: 'pink', accent: 'red', colors: ['#e11d48', '#f43f5e'], desc: '부드럽고 감성적인' },
+];
+
+// GitHub 아이콘 SVG
+const GitHubIcon = ({ className = 'w-5 h-5' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+  </svg>
+);
+
+function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }) {
   const [siteName, setSiteName] = useState('');
   const [theme, setTheme] = useState('material');
+  const [colorTheme, setColorTheme] = useState('indigo');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [repoName, setRepoName] = useState('');
@@ -164,9 +204,11 @@ function MkDocsTab({ project, status }) {
     setLoading(true);
     setMessage(null);
     try {
+      const user = getUserInfo();
+      const creator = user ? { name: user.name, affiliation: user.affiliation } : null;
       const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/config`, {
         method: 'POST',
-        body: JSON.stringify({ siteName, theme }),
+        body: JSON.stringify({ siteName, theme, colorTheme, creator }),
       });
       setMessage(result.success
         ? { type: 'success', text: '✅ MkDocs 설정 생성 완료!' }
@@ -193,23 +235,53 @@ function MkDocsTab({ project, status }) {
     setLoading(false);
   };
 
-  const handleServe = async () => {
-    setLoading(true);
-    setMessage(null);
+  const handleGitHubConnect = async () => {
     try {
-      const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/serve`, {
-        method: 'POST',
-        body: JSON.stringify({ port: 8000 }),
-      });
-      if (result.success) {
-        setMessage({ type: 'success', text: `✅ 서버 실행됨! 브라우저에서 ${result.url} 을 열어주세요 (PID: ${result.pid})` });
-      } else {
-        setMessage({ type: 'error', text: result.message });
-      }
+      const data = await apiFetch('/api/auth/github?returnTo=/deploy');
+      const popup = window.open(data.url, 'GitHub 연동', 'width=600,height=700');
+
+      // 팝업에서 postMessage 수신
+      const messageHandler = (event) => {
+        if (event.data?.type === 'github-auth-success') {
+          setGithubUser(event.data.user);
+          setDeployTarget('personal');
+          popup?.close();
+          window.removeEventListener('message', messageHandler);
+        }
+      };
+      window.addEventListener('message', messageHandler);
+
+      // 팝업이 닫히면 리스너 정리 + 상태 재확인
+      const checkClosed = setInterval(() => {
+        if (popup?.closed) {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', messageHandler);
+          // 팝업이 닫혔는데 postMessage를 못 받은 경우 상태 재확인
+          if (!githubUser) {
+            apiFetch('/api/auth/github/status')
+              .then(d => {
+                if (d.connected) {
+                  setGithubUser({ username: d.username, avatarUrl: d.avatarUrl });
+                  setDeployTarget('personal');
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      }, 1000);
     } catch (e) {
       setMessage({ type: 'error', text: e.message });
     }
-    setLoading(false);
+  };
+
+  const handleGitHubDisconnect = async () => {
+    try {
+      await apiFetch('/api/auth/github/disconnect', { method: 'POST' });
+    } catch {
+      // 서버 실패해도 로컬 상태는 정리
+    }
+    setGithubUser(null);
+    setDeployTarget('shared');
   };
 
   const handleDeploy = async () => {
@@ -217,9 +289,18 @@ function MkDocsTab({ project, status }) {
     setLoading(true);
     setDeployResult(null);
     try {
+      const user = getUserInfo();
+      const creator = user ? { name: user.name, affiliation: user.affiliation } : null;
+      const body = {
+        repoName: repoName.trim(),
+        creator,
+        deployTarget: 'personal',  // 항상 사용자 GitHub 계정으로 배포
+        registerPortfolio: true,    // 포트폴리오 등록 필수
+      };
+
       const result = await apiFetch(`/api/projects/${project.name}/deploy/github`, {
         method: 'POST',
-        body: JSON.stringify({ repoName: repoName.trim() }),
+        body: JSON.stringify(body),
       });
       setDeployResult(result);
       setTimeout(() => deployResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
@@ -230,10 +311,25 @@ function MkDocsTab({ project, status }) {
     setLoading(false);
   };
 
+  // 배포 URL 미리보기
+  const previewDeployUrl = () => {
+    if (!repoName || !githubUser) return null;
+    return `https://${githubUser.username}.github.io/${repoName}/`;
+  };
+
+  if (statusLoading) {
+    return (
+      <div className="text-center py-16">
+        <div className="inline-block w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-gray-500 text-sm">배포 도구 상태 확인 중...</p>
+      </div>
+    );
+  }
+
   if (!status?.tools?.mkdocs) {
     return (
       <div className="bg-amber-50 rounded-xl p-6">
-        <h3 className="font-semibold text-amber-800 mb-2">⚠️ MkDocs가 설치되지 않았습니다</h3>
+        <h3 className="font-semibold text-amber-800 mb-2">MkDocs가 설치되지 않았습니다</h3>
         <p className="text-sm text-amber-700 mb-3">
           MkDocs를 설치하면 마크다운을 아름다운 웹사이트로 변환할 수 있습니다.
         </p>
@@ -259,24 +355,40 @@ function MkDocsTab({ project, status }) {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
           </div>
-          <div className="w-48">
-            <label className="block text-xs text-gray-500 mb-1">테마</label>
-            <select
-              value={theme}
-              onChange={(e) => setTheme(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-            >
-              <option value="material">Material (추천)</option>
-              <option value="readthedocs">Read the Docs</option>
-              <option value="mkdocs">MkDocs 기본</option>
-            </select>
+        </div>
+
+        {/* 색상 테마 선택 */}
+        <div className="mb-4">
+          <label className="block text-xs text-gray-500 mb-2">색상 테마</label>
+          <div className="flex gap-2 flex-wrap">
+            {COLOR_THEMES.map((ct) => (
+              <button
+                key={ct.id}
+                onClick={() => setColorTheme(ct.id)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all border ${
+                  colorTheme === ct.id
+                    ? 'border-gray-400 shadow-md ring-2 ring-offset-1 ring-gray-300 scale-105'
+                    : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                }`}
+              >
+                <div className="flex -space-x-1">
+                  {ct.colors.map((c, i) => (
+                    <div key={i} className="w-4 h-4 rounded-full border border-white shadow-sm" style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+                <span>{ct.label}</span>
+              </button>
+            ))}
           </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {COLOR_THEMES.find(ct => ct.id === colorTheme)?.desc} 느낌의 디자인
+          </p>
         </div>
 
         <button
           onClick={handleGenerateConfig}
           disabled={loading}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white text-sm rounded-xl font-medium hover:from-emerald-700 hover:to-green-700 disabled:opacity-50 transition-all shadow-sm"
         >
           {loading ? '생성 중...' : '🔨 MkDocs 프로젝트 생성'}
         </button>
@@ -288,38 +400,75 @@ function MkDocsTab({ project, status }) {
         )}
       </div>
 
-      {/* 빌드 & 미리보기 */}
+      {/* 빌드 */}
       {status?.hasMkdocsYml && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="font-semibold text-gray-900 mb-4">📋 빌드 & 미리보기</h3>
-          <div className="flex gap-3">
-            <button
-              onClick={handleServe}
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              🔍 로컬 미리보기
-            </button>
-            <button
-              onClick={handleBuild}
-              disabled={loading}
-              className="px-4 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50"
-            >
-              📦 빌드
-            </button>
-          </div>
+          <h3 className="font-semibold text-gray-900 mb-4">📋 빌드</h3>
+          <p className="text-sm text-gray-500 mb-3">
+            빌드 후 "미리보기" 탭에서 결과를 확인할 수 있습니다.
+          </p>
+          <button
+            onClick={handleBuild}
+            disabled={loading}
+            className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {loading ? '빌드 중...' : '📦 빌드'}
+          </button>
         </div>
       )}
 
-      {/* GitHub Pages */}
-      {status?.hasMkdocsYml && status?.tools?.gh && (
+      {/* GitHub Pages 배포 */}
+      {status?.hasMkdocsYml && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="font-semibold text-gray-900 mb-4">🚀 GitHub Pages 배포</h3>
-          {status.ghUser ? (
-            <>
-              <p className="text-sm text-gray-500 mb-3">
-                ✅ GitHub 로그인됨: @{status.ghUser}
+
+          {/* GitHub 연동 상태 표시 */}
+          {githubUser && (
+            <div className="mb-4 flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+              {githubUser.avatarUrl && (
+                <img
+                  src={githubUser.avatarUrl}
+                  alt={githubUser.username}
+                  className="w-8 h-8 rounded-full border border-green-300"
+                />
+              )}
+              <div className="flex-1">
+                <p className="text-sm font-medium text-green-800">
+                  ✅ GitHub 연동됨: @{githubUser.username}
+                </p>
+              </div>
+              <button
+                onClick={handleGitHubDisconnect}
+                className="text-xs text-gray-500 hover:text-red-600 transition-colors px-2 py-1 rounded hover:bg-red-50"
+              >
+                연동 해제
+              </button>
+            </div>
+          )}
+
+          {/* GitHub 연동 안내 (미연동 시) */}
+          {!githubUser && (
+            <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <p className="text-sm text-gray-700 font-medium mb-2">
+                GitHub 연동이 필요합니다
               </p>
+              <p className="text-xs text-gray-500 mb-3">
+                GitHub Pages로 배포하려면 먼저 GitHub 계정을 연동해주세요.
+                배포된 사이트는 내 계정.github.io/[저장소명] 주소로 접근할 수 있습니다.
+              </p>
+              <button
+                onClick={handleGitHubConnect}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 transition-colors font-medium"
+              >
+                <GitHubIcon className="w-4 h-4" />
+                GitHub 연동하기
+              </button>
+            </div>
+          )}
+
+          {/* 배포 폼: GitHub 연동 시에만 표시 */}
+          {githubUser && (
+            <>
               <div className="flex gap-3 items-end">
                 <div className="flex-1">
                   <label className="block text-xs text-gray-500 mb-1">저장소 이름</label>
@@ -340,7 +489,7 @@ function MkDocsTab({ project, status }) {
                           onClick={() => setRepoName(name)}
                           className={`px-2.5 py-0.5 text-xs rounded-full border transition-colors ${
                             repoName === name
-                              ? 'bg-blue-100 border-blue-300 text-blue-700'
+                              ? 'bg-emerald-100 border-emerald-300 text-emerald-700'
                               : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                           }`}
                         >
@@ -350,9 +499,9 @@ function MkDocsTab({ project, status }) {
                     </div>
                   )}
                   {/* URL 미리보기 */}
-                  {repoName && status?.ghUser && (
+                  {previewDeployUrl() && (
                     <p className="text-xs text-gray-400 mt-1">
-                      🌐 https://{status.ghUser}.github.io/{repoName}/
+                      🌐 {previewDeployUrl()}
                     </p>
                   )}
                 </div>
@@ -369,13 +518,19 @@ function MkDocsTab({ project, status }) {
                   ) : '🚀 배포'}
                 </button>
               </div>
+
+              {/* 포트폴리오 등록 안내 */}
+              <p className="text-xs text-gray-400 mt-3">
+                📋 배포 시 에듀플로 포트폴리오에 자동 등록됩니다.
+              </p>
+
               {loading && !deployResult && (
-                <div className="mt-4 p-4 rounded-xl border-2 border-blue-200 bg-blue-50">
+                <div className="mt-4 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50">
                   <div className="flex items-center gap-3">
-                    <span className="inline-block w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="inline-block w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
                     <div>
-                      <p className="font-semibold text-blue-800">GitHub Pages 배포 진행 중...</p>
-                      <p className="text-xs text-blue-600 mt-1">리포지토리 생성 → 빌드 → 배포까지 1~2분 정도 걸립니다. 이 화면을 유지해주세요.</p>
+                      <p className="font-semibold text-emerald-800">GitHub Pages 배포 진행 중...</p>
+                      <p className="text-xs text-emerald-600 mt-1">리포지토리 생성 → 빌드 → 배포까지 1~2분 정도 걸립니다. 이 화면을 유지해주세요.</p>
                     </div>
                   </div>
                 </div>
@@ -405,10 +560,6 @@ function MkDocsTab({ project, status }) {
                 </div>
               )}
             </>
-          ) : (
-            <p className="text-sm text-amber-600">
-              ⚠️ GitHub 로그인이 필요합니다. <code>gh auth login</code> 실행 후 새로고침하세요.
-            </p>
           )}
         </div>
       )}
@@ -420,7 +571,7 @@ function MkDocsTab({ project, status }) {
 // =============================================
 // 탭 2: DOCX 문서
 // =============================================
-function DocxTab({ project, status }) {
+function DocxTab({ project, status, statusLoading }) {
   const [title, setTitle] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -431,10 +582,19 @@ function DocxTab({ project, status }) {
       .catch(() => setTitle('교육자료'));
   }, [project]);
 
+  if (statusLoading) {
+    return (
+      <div className="text-center py-16">
+        <div className="inline-block w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-gray-500 text-sm">배포 도구 상태 확인 중...</p>
+      </div>
+    );
+  }
+
   if (!status?.tools?.pandoc) {
     return (
       <div className="bg-amber-50 rounded-xl p-6">
-        <h3 className="font-semibold text-amber-800 mb-2">⚠️ Pandoc이 설치되지 않았습니다</h3>
+        <h3 className="font-semibold text-amber-800 mb-2">Pandoc이 설치되지 않았습니다</h3>
         <p className="text-sm text-amber-700 mb-3">
           Pandoc을 설치하면 마크다운을 DOCX 문서로 변환할 수 있습니다.
         </p>
@@ -460,9 +620,29 @@ function DocxTab({ project, status }) {
     setLoading(false);
   };
 
-  const handleDownload = () => {
-    const url = `/api/projects/${project.name}/deploy/docx/download`;
-    window.open(url, '_blank');
+  const handleDownload = async () => {
+    try {
+      const headers = {};
+      const token = getAuthToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/projects/${project.name}/deploy/docx/download`, { headers });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: '다운로드 실패' }));
+        setResult({ success: false, message: err.message });
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?(.+?)"?$/);
+      const filename = match ? decodeURIComponent(match[1]) : 'document.docx';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      setResult({ success: false, message: e.message });
+    }
   };
 
   return (
@@ -486,7 +666,7 @@ function DocxTab({ project, status }) {
           <button
             onClick={handleGenerate}
             disabled={loading || (status?.chapterCount || 0) === 0}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 disabled:opacity-50"
           >
             {loading ? '생성 중...' : '📝 DOCX 생성'}
           </button>
@@ -521,62 +701,58 @@ function DocxTab({ project, status }) {
 }
 
 // =============================================
-// 탭 3: 미리보기 (MkDocs 서버 자동 실행 + iframe)
+// 탭 3: 미리보기 (빌드 결과를 Express로 서빙)
 // =============================================
-function PreviewTab({ project, status }) {
-  const [serveState, setServeState] = useState('idle'); // idle | starting | running | error
-  const [serveUrl, setServeUrl] = useState(null);
+function PreviewTab({ project, status, statusLoading }) {
+  const [previewState, setPreviewState] = useState('idle'); // idle | building | ready | error
   const [errorMsg, setErrorMsg] = useState('');
   const [retryCount, setRetryCount] = useState(0);
-  const PREVIEW_PORT = 8000;
+  const previewUrl = `/api/projects/${project.name}/deploy/preview/index.html`;
 
-  const startServe = async (cancelled = { current: false }) => {
-    setServeState('starting');
+  const buildAndPreview = async (cancelled = { current: false }) => {
+    setPreviewState('building');
     try {
-      // 먼저 빌드
-      await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/build`, {
+      const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/build`, {
         method: 'POST',
-      });
-
-      if (cancelled.current) return;
-
-      // 서버 실행 (백엔드에서 기존 프로세스 정리 후 시작)
-      const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/serve`, {
-        method: 'POST',
-        body: JSON.stringify({ port: PREVIEW_PORT }),
       });
 
       if (cancelled.current) return;
 
       if (result.success) {
-        await new Promise((r) => setTimeout(r, 2000));
-        setServeUrl(result.url);
-        setServeState('running');
+        setPreviewState('ready');
       } else {
-        setErrorMsg(result.message || '서버 실행 실패');
-        setServeState('error');
+        setErrorMsg(result.message || result.error || '빌드 실패');
+        setPreviewState('error');
       }
     } catch (e) {
       if (!cancelled.current) {
         setErrorMsg(e.message);
-        setServeState('error');
+        setPreviewState('error');
       }
     }
   };
 
   useEffect(() => {
-    if (!status?.tools?.mkdocs || !status?.hasMkdocsYml) return;
+    if (statusLoading || !status?.tools?.mkdocs || !status?.hasMkdocsYml) return;
 
     const cancelled = { current: false };
-    startServe(cancelled);
+    buildAndPreview(cancelled);
     return () => { cancelled.current = true; };
-  }, [project, retryCount]);
+  }, [project, retryCount, statusLoading]);
+
+  if (statusLoading) {
+    return (
+      <div className="text-center py-16">
+        <div className="inline-block w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-gray-500 text-sm">상태 확인 중...</p>
+      </div>
+    );
+  }
 
   if (!status?.tools?.mkdocs) {
     return (
       <div className="text-center py-16">
         <p className="text-gray-400 text-sm">MkDocs가 설치되지 않았습니다.</p>
-        <code className="block mt-2 text-xs text-gray-500">pip install mkdocs mkdocs-material</code>
       </div>
     );
   }
@@ -584,28 +760,28 @@ function PreviewTab({ project, status }) {
   if (!status?.hasMkdocsYml) {
     return (
       <div className="text-center py-16">
-        <p className="text-gray-400 text-sm">먼저 "🌐 MkDocs 웹사이트" 탭에서 MkDocs 프로젝트를 생성하세요.</p>
+        <p className="text-gray-400 text-sm">먼저 "MkDocs 웹사이트" 탭에서 MkDocs 프로젝트를 생성하세요.</p>
       </div>
     );
   }
 
-  if (serveState === 'starting') {
+  if (previewState === 'building') {
     return (
       <div className="text-center py-16">
-        <div className="inline-block w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-3" />
-        <p className="text-gray-500 text-sm">MkDocs 빌드 및 서버 시작 중...</p>
+        <div className="inline-block w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-gray-500 text-sm">MkDocs 빌드 중...</p>
       </div>
     );
   }
 
-  if (serveState === 'error') {
+  if (previewState === 'error') {
     return (
       <div className="text-center py-16">
-        <p className="text-red-500 text-sm mb-2">서버 실행 실패</p>
+        <p className="text-red-500 text-sm mb-2">빌드 실패</p>
         <p className="text-gray-400 text-xs">{errorMsg}</p>
         <button
           onClick={() => { setErrorMsg(''); setRetryCount((c) => c + 1); }}
-          className="mt-3 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="mt-3 px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
         >
           다시 시도
         </button>
@@ -613,33 +789,24 @@ function PreviewTab({ project, status }) {
     );
   }
 
-  if (serveState === 'running' && serveUrl) {
+  if (previewState === 'ready') {
     return (
       <div className="h-full flex flex-col">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-green-600">
-            MkDocs 서버 실행 중: {serveUrl}
+            빌드된 사이트 미리보기
           </span>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setRetryCount((c) => c + 1)}
-              className="text-xs text-gray-500 hover:text-gray-700"
-            >
-              새로고침
-            </button>
-            <a
-              href={serveUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-blue-600 hover:underline"
-            >
-              새 탭에서 열기 →
-            </a>
-          </div>
+          <button
+            onClick={() => setRetryCount((c) => c + 1)}
+            className="text-xs text-gray-500 hover:text-gray-700"
+          >
+            새로고침
+          </button>
         </div>
         <iframe
-          src={serveUrl}
+          src={previewUrl}
           className="flex-1 w-full rounded-xl border border-gray-200"
+          style={{ minHeight: '500px' }}
           title="MkDocs Preview"
         />
       </div>

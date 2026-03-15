@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useProjectStore } from '../stores/projectStore';
 import { apiFetch, apiStreamPost } from '../api/client';
+import ModelSelector from '../components/ModelSelector';
 
 const TABS = ['💬 대화형 모드', '🤖 배치 자동화', '✏️ 챕터 편집'];
 
@@ -34,7 +35,7 @@ export default function ChapterCreation() {
             onClick={() => setActiveTab(i)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === i
-                ? 'border-blue-600 text-blue-600'
+                ? 'border-emerald-600 text-emerald-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -62,17 +63,9 @@ function InteractiveTab({ project }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [previewContent, setPreviewContent] = useState('');
-  const [model, setModel] = useState('claude-sonnet-4-20250514');
-  const [models, setModels] = useState([]);
+  const [model, setModel] = useState('claude-sonnet-4-6');
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
-
-  useEffect(() => {
-    apiFetch('/api/models').then((d) => {
-      setModels(d.models);
-      apiFetch('/api/models/default/conversation').then((r) => setModel(r.modelId)).catch(() => {});
-    }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!project) return;
@@ -201,20 +194,17 @@ function InteractiveTab({ project }) {
             </option>
           ))}
         </select>
-        <select
+        <ModelSelector
           value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
-        >
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>{m.label}</option>
-          ))}
-        </select>
+          onChange={setModel}
+          defaultPurpose="conversation"
+          className="px-3 py-1.5"
+        />
       </div>
 
       {!selectedChapter ? (
         <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-          위에서 챕터를 선택하면 Claude와 대화하며 내용을 작성할 수 있습니다
+          위에서 챕터를 선택하면 AI와 대화하며 내용을 작성할 수 있습니다
         </div>
       ) : (
         <>
@@ -241,7 +231,7 @@ function InteractiveTab({ project }) {
                   <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[85%] rounded-xl px-4 py-2.5 text-sm ${
                       msg.role === 'user'
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-emerald-600 text-white'
                         : 'bg-gray-100 text-gray-800'
                     }`}>
                       {msg.role === 'assistant' ? (
@@ -265,12 +255,12 @@ function InteractiveTab({ project }) {
                     type="text"
                     placeholder="챕터 내용에 대해 요청하세요..."
                     disabled={isStreaming}
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <button
                     type="submit"
                     disabled={isStreaming}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 disabled:opacity-50"
                   >
                     전송
                   </button>
@@ -310,7 +300,7 @@ function InteractiveTab({ project }) {
             <button
               onClick={handleSaveChapter}
               disabled={!previewContent}
-              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
             >
               💾 파일로 저장
             </button>
@@ -349,8 +339,8 @@ function ChapterStatusIcon({ hasContent, isGenerating }) {
   if (isGenerating) {
     return (
       <span className="relative flex h-3 w-3" title="생성 중...">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
       </span>
     );
   }
@@ -380,7 +370,7 @@ function ChapterProgressList({ chapters, currentGenerating, status, selectedChap
             type="checkbox"
             checked={allSelected}
             onChange={() => onSelectAll?.(!allSelected)}
-            className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+            className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600"
           />
           <span className="text-xs text-gray-500">
             {allSelected ? '전체 해제' : '전체 선택'} ({selectedCount}/{chapters.length})
@@ -408,7 +398,7 @@ function ChapterProgressList({ chapters, currentGenerating, status, selectedChap
                 </span>
                 <div className="w-16 bg-gray-200 rounded-full h-1.5 flex-shrink-0">
                   <div
-                    className="bg-blue-500 h-1.5 rounded-full transition-all"
+                    className="bg-emerald-500 h-1.5 rounded-full transition-all"
                     style={{ width: `${partTotal > 0 ? (partCompleted / partTotal) * 100 : 0}%` }}
                   />
                 </div>
@@ -424,7 +414,7 @@ function ChapterProgressList({ chapters, currentGenerating, status, selectedChap
                         key={ch.chapter_id}
                         onClick={() => status !== 'running' && onToggleSelect?.(ch.chapter_id)}
                         className={`flex items-center gap-2 text-sm py-1 px-2 rounded cursor-pointer transition-colors ${
-                          isGenerating ? 'bg-blue-50' : isSelected ? 'bg-amber-50' : 'hover:bg-gray-50'
+                          isGenerating ? 'bg-emerald-50' : isSelected ? 'bg-amber-50' : 'hover:bg-gray-50'
                         }`}
                       >
                         {status !== 'running' && (
@@ -433,11 +423,11 @@ function ChapterProgressList({ chapters, currentGenerating, status, selectedChap
                             checked={isSelected || false}
                             onChange={() => onToggleSelect?.(ch.chapter_id)}
                             onClick={(e) => e.stopPropagation()}
-                            className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 flex-shrink-0"
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 flex-shrink-0"
                           />
                         )}
                         <ChapterStatusIcon hasContent={ch.has_content} isGenerating={isGenerating} />
-                        <span className={`truncate ${isGenerating ? 'text-blue-700 font-medium' : 'text-gray-600'}`}>
+                        <span className={`truncate ${isGenerating ? 'text-emerald-700 font-medium' : 'text-gray-600'}`}>
                           {ch.chapter_id}: {ch.chapter_title}
                         </span>
                         {ch.estimated_time && (
@@ -475,8 +465,7 @@ function BatchTab({ project, onComplete }) {
   const [chapters, setChapters] = useState([]);
   const [report, setReport] = useState(null);
   const [model, setModel] = useState('claude-opus-4-5-20251101');
-  const [models, setModels] = useState([]);
-  const [maxTokens, setMaxTokens] = useState(8000);
+  const [maxTokens, setMaxTokens] = useState(12000);
   const [concurrent, setConcurrent] = useState(5);
   const [tpmLimit, setTpmLimit] = useState(200000);
   const [status, setStatus] = useState('idle'); // idle, running, completed, cancelled
@@ -486,11 +475,24 @@ function BatchTab({ project, onComplete }) {
   const logEndRef = useRef(null);
   const pollRef = useRef(null);
 
+  // 샘플 챕터 관련 상태
+  const [samplePhase, setSamplePhase] = useState('select'); // select, generating, review
+  const [sampleChapterId, setSampleChapterId] = useState('');
+  const [sampleContent, setSampleContent] = useState('');
+  const [sampleTokens, setSampleTokens] = useState(null);
+  const [guidelines, setGuidelines] = useState('');
+  const [guidelinesSaved, setGuidelinesSaved] = useState(true);
+  const [showSample, setShowSample] = useState(true);
+  const [models, setModels] = useState([]);
+
+  // 기본 모델 + 모델 목록 로드
   useEffect(() => {
-    apiFetch('/api/models').then((d) => {
-      setModels(d.models);
-      apiFetch('/api/models/default/generation').then((r) => setModel(r.modelId)).catch(() => {});
-    }).catch(() => {});
+    apiFetch('/api/models/default/generation')
+      .then((r) => setModel(r.modelId))
+      .catch(() => {});
+    apiFetch('/api/models')
+      .then((r) => setModels(r.models || []))
+      .catch(() => {});
   }, []);
 
   const loadChapters = useCallback(async () => {
@@ -503,6 +505,54 @@ function BatchTab({ project, onComplete }) {
   }, [project]);
 
   useEffect(() => { loadChapters(); }, [loadChapters]);
+
+  // 가이드라인 로드
+  useEffect(() => {
+    if (!project) return;
+    apiFetch(`/api/projects/${project.name}/toc/guidelines`)
+      .then((r) => { setGuidelines(r.guidelines || ''); setGuidelinesSaved(true); })
+      .catch(() => {});
+  }, [project]);
+
+  // 샘플 챕터 생성
+  const handleGenerateSample = async () => {
+    if (!sampleChapterId) return;
+    setSamplePhase('generating');
+    setSampleContent('');
+    setSampleTokens(null);
+    try {
+      const result = await apiFetch(`/api/projects/${project.name}/chapters/${sampleChapterId}/generate`, {
+        method: 'POST',
+        body: { model, maxTokens },
+      });
+      if (result.success) {
+        const data = await apiFetch(`/api/projects/${project.name}/chapters/${sampleChapterId}`);
+        setSampleContent(data.content || '');
+        setSampleTokens({ input: result.input_tokens || 0, output: result.output_tokens || 0 });
+        setSamplePhase('review');
+        loadChapters();
+      } else {
+        setSampleContent(`❌ 생성 실패: ${result.message}`);
+        setSamplePhase('review');
+      }
+    } catch (err) {
+      setSampleContent(`❌ 오류: ${err.message}`);
+      setSamplePhase('review');
+    }
+  };
+
+  // 가이드라인 저장
+  const handleSaveGuidelines = async () => {
+    try {
+      await apiFetch(`/api/projects/${project.name}/toc/guidelines`, {
+        method: 'PUT',
+        body: { guidelines },
+      });
+      setGuidelinesSaved(true);
+    } catch (err) {
+      alert(`가이드라인 저장 실패: ${err.message}`);
+    }
+  };
 
   // 마운트 시 서버 생성 상태 확인 (새로고침 대응)
   useEffect(() => {
@@ -699,12 +749,12 @@ function BatchTab({ project, onComplete }) {
     <div className="flex flex-col h-full gap-4">
       {/* 생성 중 취소 바 (항상 보이는 위치) */}
       {status === 'running' && (
-        <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-xl flex-shrink-0">
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex-shrink-0">
           <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
           </span>
-          <span className="text-sm text-blue-700 font-medium flex-1">
+          <span className="text-sm text-emerald-700 font-medium flex-1">
             {currentGenerating.size > 0
               ? `✍️ ${[...currentGenerating].join(', ')} 생성 중...`
               : '🚀 배치 생성 진행 중...'}
@@ -718,6 +768,135 @@ function BatchTab({ project, onComplete }) {
         </div>
       )}
 
+      {/* 🔬 샘플 챕터 미리보기 */}
+      {status !== 'running' && totalChapters > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex-shrink-0">
+          <button
+            onClick={() => setShowSample(!showSample)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-gray-900">🔬 샘플 챕터 미리보기</span>
+              <span className="text-xs text-gray-400">전체 생성 전 샘플로 결과를 확인하고 가이드를 다듬으세요</span>
+            </div>
+            <span className="text-gray-400 text-sm">{showSample ? '▲' : '▼'}</span>
+          </button>
+
+          {showSample && (
+            <div className="px-4 pb-4 border-t border-gray-100 space-y-4">
+              {/* 워크플로 단계 표시 */}
+              <div className="flex items-center gap-1.5 pt-3 text-xs">
+                <span className={`px-2 py-1 rounded-full ${samplePhase === 'select' ? 'bg-emerald-100 text-emerald-700 font-bold' : samplePhase !== 'select' ? 'bg-green-100 text-green-700' : 'text-gray-400'}`}>
+                  ① 챕터 선택
+                </span>
+                <span className="text-gray-300">→</span>
+                <span className={`px-2 py-1 rounded-full ${samplePhase === 'generating' ? 'bg-emerald-100 text-emerald-700 font-bold animate-pulse' : samplePhase === 'review' ? 'bg-green-100 text-green-700' : 'text-gray-400'}`}>
+                  ② 샘플 생성
+                </span>
+                <span className="text-gray-300">→</span>
+                <span className={`px-2 py-1 rounded-full ${samplePhase === 'review' ? 'bg-emerald-100 text-emerald-700 font-bold' : 'text-gray-400'}`}>
+                  ③ 검토 & 가이드 조정
+                </span>
+                <span className="text-gray-300">→</span>
+                <span className="px-2 py-1 rounded-full text-gray-400">④ 전체 생성</span>
+              </div>
+
+              <div className="flex gap-4">
+                {/* 왼쪽: 샘플 생성 + 결과 */}
+                <div className="flex-1 min-w-0 flex flex-col">
+                  <div className="flex items-center gap-2 mb-3">
+                    <select
+                      value={sampleChapterId}
+                      onChange={(e) => { setSampleChapterId(e.target.value); if (samplePhase !== 'generating') setSamplePhase('select'); }}
+                      disabled={samplePhase === 'generating'}
+                      className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">샘플로 생성할 챕터 선택...</option>
+                      {chapters.map((ch) => (
+                        <option key={ch.chapter_id} value={ch.chapter_id}>
+                          {ch.chapter_id}: {ch.chapter_title} {ch.has_content ? '(완료)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleGenerateSample}
+                      disabled={!sampleChapterId || samplePhase === 'generating'}
+                      className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 disabled:opacity-50 whitespace-nowrap transition-colors flex items-center gap-1.5"
+                    >
+                      {samplePhase === 'generating' ? (
+                        <><span className="animate-spin inline-block">⏳</span> 생성 중...</>
+                      ) : samplePhase === 'review' ? '🔄 재생성' : '🔬 샘플 생성'}
+                    </button>
+                  </div>
+
+                  {/* 샘플 결과 미리보기 */}
+                  {samplePhase === 'generating' && (
+                    <div className="flex-1 flex items-center justify-center py-12 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className="text-center">
+                        <div className="animate-spin text-3xl mb-3">🔬</div>
+                        <p className="text-sm text-gray-500">샘플 챕터를 생성하고 있습니다...</p>
+                        <p className="text-xs text-gray-400 mt-1">모델: {model}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {sampleContent && samplePhase === 'review' && (
+                    <div className="border border-gray-200 rounded-lg overflow-hidden flex flex-col">
+                      <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                        <span className="text-xs font-medium text-gray-700">📄 샘플 결과: {sampleChapterId}</span>
+                        {sampleTokens && (
+                          <span className="text-xs text-gray-400">
+                            입력 {sampleTokens.input.toLocaleString()} + 출력 {sampleTokens.output.toLocaleString()} 토큰
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-4 max-h-[400px] overflow-y-auto prose prose-sm max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{sampleContent}</ReactMarkdown>
+                      </div>
+                    </div>
+                  )}
+
+                  {!sampleContent && samplePhase === 'select' && (
+                    <div className="flex-1 flex items-center justify-center py-8 border border-dashed border-gray-300 rounded-lg">
+                      <p className="text-sm text-gray-400">위에서 챕터를 선택하고 샘플을 생성하세요</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 오른쪽: 가이드라인 편집 */}
+                <div className="w-80 flex-shrink-0 flex flex-col">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-700">📝 생성 가이드라인</span>
+                    <div className="flex items-center gap-2">
+                      {!guidelinesSaved && (
+                        <span className="text-xs text-amber-600 animate-pulse">● 수정됨</span>
+                      )}
+                      <button
+                        onClick={handleSaveGuidelines}
+                        disabled={guidelinesSaved}
+                        className="px-2.5 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                      >
+                        💾 저장
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    value={guidelines}
+                    onChange={(e) => { setGuidelines(e.target.value); setGuidelinesSaved(false); }}
+                    placeholder={"생성 가이드라인을 입력하세요...\n\n예시:\n- 모든 챕터에 실습 예제를 포함해주세요\n- 코드 블록에는 항상 주석을 달아주세요\n- 각 섹션 끝에 핵심 정리를 추가해주세요\n- 학생 수준은 고등학교 1학년입니다"}
+                    className="flex-1 min-h-[200px] w-full text-sm border border-gray-300 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-mono"
+                  />
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    💡 이 가이드라인은 모든 챕터 생성 시 AI에게 전달됩니다.
+                    {samplePhase === 'review' && ' 가이드를 수정한 후 샘플을 재생성하여 결과를 확인하세요.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 설정 + 진행 상태 (높이 통일) */}
       <div className={`flex gap-4 ${logs.length > 0 ? 'flex-shrink-0 h-80' : 'flex-1 min-h-[320px]'}`}>
         {/* 설정 패널 */}
@@ -725,17 +904,13 @@ function BatchTab({ project, onComplete }) {
           <h3 className="font-semibold text-gray-900 text-sm">⚙️ 배치 생성 설정</h3>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Claude 모델</label>
-            <select
+            <label className="block text-xs text-gray-500 mb-1">AI 모델</label>
+            <ModelSelector
               value={model}
-              onChange={(e) => setModel(e.target.value)}
-              disabled={status === 'running'}
-              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
-            >
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-              ))}
-            </select>
+              onChange={setModel}
+              defaultPurpose="generation"
+              className="w-full px-3 py-1.5"
+            />
           </div>
 
           <div>
@@ -799,7 +974,7 @@ function BatchTab({ project, onComplete }) {
                       onClick={() => setTpmLimit(preset.value)}
                       className={`px-1.5 py-0.5 text-[10px] rounded border ${
                         tpmLimit === preset.value
-                          ? 'bg-blue-100 border-blue-300 text-blue-700'
+                          ? 'bg-emerald-100 border-emerald-300 text-emerald-700'
                           : 'border-gray-200 text-gray-400 hover:bg-gray-50'
                       }`}
                     >
@@ -838,7 +1013,7 @@ function BatchTab({ project, onComplete }) {
                 <button
                   onClick={() => handleGenerate(true)}
                   disabled={remainingChapters === 0}
-                  className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                  className="w-full py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
                 >
                   {completedChapters > 0 && remainingChapters > 0
                     ? `▶️ 이어서 생성 (${remainingChapters}개)`
@@ -859,7 +1034,7 @@ function BatchTab({ project, onComplete }) {
         <div className="flex-1 bg-white rounded-xl border border-gray-200 p-4 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between mb-3 flex-shrink-0">
             <h3 className="font-semibold text-gray-900 text-sm">📋 목차 및 진행 상태</h3>
-            <button onClick={loadChapters} className="text-xs text-blue-600 hover:underline">
+            <button onClick={loadChapters} className="text-xs text-emerald-600 hover:underline">
               🔄 새로고침
             </button>
           </div>
@@ -874,7 +1049,7 @@ function BatchTab({ project, onComplete }) {
                   <span>
                     완료: {completedChapters}/{totalChapters}개
                     {status === 'running' && currentGenerating.size > 0 && (
-                      <span className="ml-2 text-blue-600 animate-pulse">
+                      <span className="ml-2 text-emerald-600 animate-pulse">
                         ✍️ {[...currentGenerating].join(', ')} 생성 중...
                       </span>
                     )}
@@ -884,7 +1059,7 @@ function BatchTab({ project, onComplete }) {
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
                   <div
                     className={`h-2.5 rounded-full transition-all ${
-                      status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-blue-600'
+                      status === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-600'
                     }`}
                     style={{ width: `${totalChapters > 0 ? (completedChapters / totalChapters) * 100 : 0}%` }}
                   />
@@ -956,17 +1131,24 @@ function EstimatedCost({ model, models, maxTokens, chapterCount }) {
   }
 
   const { input: inputPrice, output: outputPrice } = modelInfo.pricing;
-  const estimatedInputPerChapter = 10000; // 평균 입력 토큰 (프롬프트 + 아웃라인 + 참고자료)
+  // 실제 프롬프트: 시스템(3~5K) + docStructure(2~4K) + templateAddition(2~4K) + 아웃라인(1~3K) + 참고자료(5~20K) + 이전챕터참조(10~30K)
+  const estimatedInputPerChapter = 40000; // 평균 입력 토큰 (프롬프트 + 아웃라인 + 참고자료 + 이전 챕터)
+  // 실제 출력은 maxTokens의 약 70~90% 사용
+  const estimatedOutputPerChapter = Math.round(maxTokens * 0.8);
   const totalInput = chapterCount * estimatedInputPerChapter;
-  const totalOutput = chapterCount * maxTokens;
+  const totalOutput = chapterCount * estimatedOutputPerChapter;
   const inputCost = (totalInput / 1_000_000) * inputPrice;
   const outputCost = (totalOutput / 1_000_000) * outputPrice;
   const totalCost = inputCost + outputCost;
 
+  // 원화 환산 (1달러 ≈ 1,450원)
+  const krwTotal = Math.round(totalCost * 1450);
+
   return (
     <div className="text-xs text-amber-700 space-y-0.5">
-      <p>{chapterCount}개 x 입력 ~{estimatedInputPerChapter.toLocaleString()} + 출력 ~{maxTokens.toLocaleString()} 토큰</p>
-      <p className="font-semibold">~${totalCost.toFixed(2)} (입력 ${inputCost.toFixed(2)} + 출력 ${outputCost.toFixed(2)})</p>
+      <p>{chapterCount}개 챕터 × 입력 ~{estimatedInputPerChapter.toLocaleString()} + 출력 ~{estimatedOutputPerChapter.toLocaleString()} 토큰</p>
+      <p className="font-semibold">~${totalCost.toFixed(2)} (약 {krwTotal.toLocaleString()}원)</p>
+      <p className="text-amber-600">입력 ${inputCost.toFixed(2)} + 출력 ${outputCost.toFixed(2)}</p>
     </div>
   );
 }
@@ -991,7 +1173,7 @@ function ReportPanel({ report }) {
           <div className="text-xs text-gray-500">✅ 신규 성공</div>
         </div>
         <div className="text-center">
-          <div className="text-xl font-bold text-blue-600">{totalCompleted}/{report.total}</div>
+          <div className="text-xl font-bold text-emerald-600">{totalCompleted}/{report.total}</div>
           <div className="text-xs text-gray-500">📊 전체 완료</div>
         </div>
         <div className="text-center">
@@ -1004,6 +1186,7 @@ function ReportPanel({ report }) {
         </div>
         <div className="text-center">
           <div className="text-xl font-bold text-amber-600">~${cost.total_cost?.toFixed(4) || '0'}</div>
+          <div className="text-xs text-amber-500">약 {Math.round((cost.total_cost || 0) * 1450).toLocaleString()}원</div>
           <div className="text-xs text-gray-500">💰 추정 비용</div>
         </div>
       </div>
@@ -1110,7 +1293,7 @@ function EditorTab({ project }) {
               onClick={() => loadChapter(ch.chapter_id)}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
                 selectedId === ch.chapter_id
-                  ? 'bg-blue-50 text-blue-700 font-medium'
+                  ? 'bg-emerald-50 text-emerald-700 font-medium'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
@@ -1135,7 +1318,7 @@ function EditorTab({ project }) {
             <button
               onClick={() => setShowPreview(!showPreview)}
               className={`px-3 py-1 text-xs rounded-lg border ${
-                showPreview ? 'bg-blue-50 text-blue-600 border-blue-200' : 'text-gray-500 border-gray-200 hover:bg-gray-50'
+                showPreview ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'text-gray-500 border-gray-200 hover:bg-gray-50'
               }`}
             >
               {showPreview ? '📝 편집' : '👁️ 미리보기'}
@@ -1143,7 +1326,7 @@ function EditorTab({ project }) {
             <button
               onClick={handleSave}
               disabled={!hasChanges}
-              className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="px-3 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
             >
               💾 저장
             </button>

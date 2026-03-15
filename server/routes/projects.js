@@ -9,6 +9,7 @@ import { ProgressManager } from '../services/progressManager.js';
 import { TemplateManager } from '../services/templateManager.js';
 import { ReferenceManager } from '../services/referenceManager.js';
 import { sanitizeId } from '../middleware/sanitize.js';
+import { TIER_CONFIG } from '../../shared/constants.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = process.env.PROJECTS_DIR || join(__dirname, '..', '..', 'projects');
@@ -38,7 +39,7 @@ async function loadConfig(id) {
 // 프로젝트 CRUD
 // ============================================================
 
-// GET /api/projects - 프로젝트 목록
+// GET /api/projects - 프로젝트 목록 (자기 프로젝트만 또는 전체)
 router.get('/', asyncHandler(async (req, res) => {
   if (!existsSync(PROJECTS_DIR)) {
     await mkdir(PROJECTS_DIR, { recursive: true });
@@ -55,17 +56,54 @@ router.get('/', asyncHandler(async (req, res) => {
     }
   }
 
+  // 사용자별 필터링: owner가 설정된 프로젝트는 본인 것만, 미설정은 모두에게 표시
+  const userGoogleId = req.user?.googleId;
+  const filtered = userGoogleId
+    ? projects.filter(p => !p.owner || p.owner.googleId === userGoogleId)
+    : projects;
+
   // 최신순 정렬
-  projects.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-  res.json(projects);
+  filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  res.json(filtered);
 }));
 
 // POST /api/projects - 프로젝트 생성
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, title, author, description, claude_model, settings, template_id, template_vars, custom_prompt_config } = req.body;
+  const { name, title, author, description, claude_model, settings, template_id, template_vars, custom_prompt_config, include_hw_diagrams } = req.body;
 
   if (!name || !title) {
     return res.status(400).json({ message: '프로젝트 ID와 제목은 필수입니다' });
+  }
+
+  // 프로젝트 한도 체크 (등급 기반)
+  const userTier = req.userTier || 'starter';
+  const maxProjects = TIER_CONFIG[userTier]?.maxProjects || 1;
+
+  if (req.user?.googleId) {
+    // 현재 프로젝트 수 카운트
+    if (existsSync(PROJECTS_DIR)) {
+      const entries = await readdir(PROJECTS_DIR, { withFileTypes: true });
+      let count = 0;
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name === 'template') continue;
+        const configFile = join(PROJECTS_DIR, entry.name, 'config.json');
+        if (!existsSync(configFile)) continue;
+        try {
+          const raw = await readFile(configFile, 'utf-8');
+          const config = JSON.parse(raw);
+          if (config.owner?.googleId === req.user.googleId) count++;
+        } catch { /* skip */ }
+      }
+
+      if (count >= maxProjects) {
+        return res.status(403).json({
+          message: `프로젝트 한도에 도달했습니다 (${count}/${maxProjects}개). 등급 업그레이드를 요청하세요.`,
+          currentCount: count,
+          maxProjects,
+          currentTier: userTier,
+        });
+      }
+    }
   }
 
   const projPath = projectPath(name);
@@ -84,19 +122,25 @@ router.post('/', asyncHandler(async (req, res) => {
     await mkdir(join(projPath, 'logs'), { recursive: true });
   }
 
-  // config.json 작성
+  // config.json 작성 (owner 정보 포함)
   const config = {
     name,
     title,
     author: author || '',
     description: description || '',
-    claude_model: claude_model || 'claude-sonnet-4-20250514',
+    claude_model: claude_model || 'claude-sonnet-4-6',
+    owner: req.user ? {
+      googleId: req.user.googleId,
+      email: req.user.email,
+      name: req.user.name,
+    } : null,
     settings: {
       batch_generation_enabled: settings?.batch_generation_enabled ?? true,
       auto_save: settings?.auto_save ?? true,
       max_tokens: settings?.max_tokens ?? 16000,
       temperature: 1.0,
     },
+    include_hw_diagrams: include_hw_diagrams || false,
     deployment: {
       auto_commit: false,
       auto_deploy: false,
@@ -147,6 +191,57 @@ router.get('/templates/list', asyncHandler(async (req, res) => {
   res.json(templates);
 }));
 
+// GET /api/projects/templates/samples/:templateId - 템플릿 샘플 챕터 조회
+router.get('/templates/samples/:templateId', asyncHandler(async (req, res) => {
+  const samplesFile = join(__dirname, '..', '..', 'samples', 'template-samples.md');
+  if (!existsSync(samplesFile)) {
+    return res.status(404).json({ message: '샘플 파일을 찾을 수 없습니다' });
+  }
+
+  const templateId = req.params.templateId;
+
+  // 템플릿 ID → 샘플 섹션 매핑
+  const sectionMap = {
+    'storytelling': '1.',
+    'school-textbook': '2.',
+    'programming-course': '3.',
+    'self-directed-learning': '4.',
+    'business-education': '5.',
+    'teacher-guide-4c': '6.',
+    'workshop-material': '7.',
+    'class-preview': '8.',
+  };
+
+  const sectionPrefix = sectionMap[templateId];
+  if (!sectionPrefix) {
+    return res.status(404).json({ message: '해당 템플릿의 샘플이 없습니다' });
+  }
+
+  const raw = await readFile(samplesFile, 'utf-8');
+  const sections = raw.split(/\n---\n/);
+
+  // 해당 섹션 번호로 시작하는 ## 헤더를 가진 섹션 찾기
+  let sample = null;
+  for (const section of sections) {
+    const trimmed = section.trim();
+    // "## 1. 스토리텔링 교육자료" 같은 패턴 매칭
+    if (trimmed.startsWith(`## ${sectionPrefix}`) || trimmed.match(new RegExp(`^##\\s+${sectionPrefix.replace('.', '\\.')}`))) {
+      sample = trimmed;
+      break;
+    }
+  }
+
+  if (!sample) {
+    return res.status(404).json({ message: '해당 템플릿의 샘플을 찾을 수 없습니다' });
+  }
+
+  // ## 헤더에서 제목 추출
+  const titleMatch = sample.match(/^##\s+\d+\.\s+(.+?)(?:\s*—\s*(.+))?$/m);
+  const title = titleMatch ? (titleMatch[2] || titleMatch[1]) : templateId;
+
+  res.json({ templateId, title, content: sample });
+}));
+
 // GET /api/projects/:id - 프로젝트 상세
 router.get('/:id', asyncHandler(async (req, res) => {
   const config = await loadConfig(req.params.id);
@@ -174,6 +269,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
   if (updates.target_audience !== undefined) config.target_audience = updates.target_audience;
   if (updates.claude_model !== undefined) config.claude_model = updates.claude_model;
   if (updates.settings) config.settings = { ...config.settings, ...updates.settings };
+  if (updates.include_hw_diagrams !== undefined) config.include_hw_diagrams = updates.include_hw_diagrams;
   config.updated_at = new Date().toISOString();
 
   await writeFile(configFile, JSON.stringify(config, null, 2), 'utf-8');

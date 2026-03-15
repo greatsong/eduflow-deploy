@@ -11,7 +11,6 @@ export const STEPS = [
 // 추가 메뉴 (워크플로우 외)
 export const EXTRA_NAV = [
   { name: '포트폴리오', icon: '📊', route: '/portfolio' },
-  { name: '베타 배포', icon: '🎁', route: '/beta' },
   { name: 'AI 모델 비교', icon: '⚖️', route: '/compare' },
 ];
 
@@ -47,3 +46,52 @@ export const SSE_EVENTS = {
   ERROR: 'error',
   DONE: 'done',
 };
+
+// ===== 사용자 등급 시스템 =====
+
+export const USER_TIERS = {
+  STARTER: 'starter',
+  STANDARD: 'standard',
+  PRO: 'pro',
+  MASTER: 'master',
+};
+
+export const TIER_CONFIG = {
+  starter: {
+    label: 'Starter',
+    labelKo: '스타터',
+    maxProjects: 1,
+    allowPremiumModels: false,
+    color: 'gray',
+  },
+  standard: {
+    label: 'Standard',
+    labelKo: '스탠다드',
+    maxProjects: 3,
+    allowPremiumModels: false,
+    color: 'emerald',
+  },
+  pro: {
+    label: 'Pro',
+    labelKo: '프로',
+    maxProjects: 5,
+    allowPremiumModels: true,
+    color: 'purple',
+  },
+  master: {
+    label: 'Master',
+    labelKo: '마스터',
+    maxProjects: 99,
+    allowPremiumModels: true,
+    color: 'amber',
+  },
+};
+
+// Pro 이상에서만 사용 가능한 프리미엄 모델 tier (model_config.json의 tier 값)
+export const PREMIUM_MODEL_TIERS = [
+  '최고 품질',        // claude-opus-4-6
+  '프리미엄 추론',     // gpt-5.4-pro
+  '최신 최고급 추론',  // gemini-3.1-pro-preview
+];
+
+export const TIER_ORDER = ['starter', 'standard', 'pro', 'master'];

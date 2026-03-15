@@ -5,6 +5,41 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// 회로도(hw-diagram) 프롬프트 — 모든 템플릿에서 옵션으로 사용 가능
+const HW_DIAGRAM_PROMPT = `
+
+### 시각 자료 & 회로도
+
+하드웨어 관련 시각 자료는 **반드시** 아래 HTML 마크업을 사용:
+
+\`\`\`html
+<!-- Pico 핀 배치도 -->
+<div class="hw-diagram" data-type="pico-pinout"
+     data-highlight='[{"pin":"핀이름","label":"용도","color":"색상코드"}]'>
+</div>
+
+<!-- 회로 연결도 -->
+<div class="hw-diagram" data-type="connection"
+     data-title="제목"
+     data-connections='[{"from":"핀","to":"부품","then":"다음부품","color":"색상"}]'
+     data-notes='["주의사항1","주의사항2"]'>
+</div>
+
+<!-- 센서 모듈 연결 -->
+<div class="hw-diagram" data-type="sensor-module"
+     data-sensor="센서명"
+     data-title="제목"
+     data-connections='[{"pin":"센서핀","to":"Pico핀","note":"설명","color":"색상"}]'>
+</div>
+\`\`\`
+
+소프트웨어/개념 다이어그램은 Mermaid를 사용:
+\`\`\`mermaid
+flowchart LR
+  A[입력] --> B[처리] --> C[출력]
+\`\`\`
+`;
+
 export class TemplateManager {
   constructor(templatesDir = null) {
     this.templatesDir = templatesDir || join(__dirname, '..', '..', 'templates');
@@ -87,12 +122,33 @@ export class TemplateManager {
 
   async getChapterPromptAddition(projectPath) {
     const filePath = join(projectPath, 'template-info.json');
-    if (!existsSync(filePath)) return '';
+    let addition = '';
     try {
-      const raw = await readFile(filePath, 'utf-8');
-      return JSON.parse(raw).chapter_prompt_addition || '';
+      if (existsSync(filePath)) {
+        const raw = await readFile(filePath, 'utf-8');
+        addition = JSON.parse(raw).chapter_prompt_addition || '';
+      }
     } catch {
-      return '';
+      // ignore
     }
+
+    // config.json에서 include_hw_diagrams 옵션 확인
+    const configPath = join(projectPath, 'config.json');
+    try {
+      if (existsSync(configPath)) {
+        const configRaw = await readFile(configPath, 'utf-8');
+        const config = JSON.parse(configRaw);
+        if (config.include_hw_diagrams) {
+          // 이미 hw-diagram 마크업이 포함된 템플릿(class-preview)은 중복 추가 안 함
+          if (!addition.includes('hw-diagram')) {
+            addition += HW_DIAGRAM_PROMPT;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return addition;
   }
 }

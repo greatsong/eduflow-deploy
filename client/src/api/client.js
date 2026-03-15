@@ -1,3 +1,5 @@
+import { getAuthToken } from '../components/EntryForm';
+
 export const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // 프로바이더별 localStorage 키 매핑
@@ -38,10 +40,15 @@ export function hasApiKey() {
   return Object.values(PROVIDER_KEYS).some((k) => !!localStorage.getItem(k));
 }
 
-/** 공통 헤더 생성 — 모든 프로바이더 키를 각각의 헤더로 전송 */
+/** 공통 헤더 생성 — 인증 토큰 + 프로바이더 키 전송 */
 function authHeaders(extra = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  // 기존 호환: x-api-key
+
+  // 구글 로그인 인증 토큰
+  const token = getAuthToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  // 기존 호환: x-api-key (사용자가 직접 키를 입력한 경우)
   const anthropicKey = getApiKey('anthropic');
   if (anthropicKey) headers['x-api-key'] = anthropicKey;
 
@@ -61,10 +68,15 @@ function authHeaders(extra = {}) {
  * 기본 fetch 래퍼
  */
 export async function apiFetch(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const fetchOptions = {
     ...options,
     headers: authHeaders(options.headers),
-  });
+  };
+  // body가 객체면 자동 JSON 직렬화
+  if (fetchOptions.body && typeof fetchOptions.body === 'object' && !(fetchOptions.body instanceof FormData)) {
+    fetchOptions.body = JSON.stringify(fetchOptions.body);
+  }
+  const res = await fetch(`${API_BASE}${path}`, fetchOptions);
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }));

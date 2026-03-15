@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { apiFetch, API_BASE } from '../api/client';
+import { apiFetch, API_BASE, getApiKey } from '../api/client';
 import ReactMarkdown from 'react-markdown';
 
 // 정보·AI 교육 특화 평가 프리셋
 const PRESET_CATEGORIES = [
   {
     category: '컴퓨팅 사고력',
-    color: 'bg-blue-50 text-blue-700',
+    color: 'bg-emerald-50 text-emerald-700',
     presets: [
       { name: '알고리즘 설계', prompt: '중학교 "정보" 교과서의 **"정렬 알고리즘"** 단원을 작성해주세요.\n\n조건:\n- 대상: 중학교 2학년 (프로그래밍 경험 없음)\n- 버블 정렬, 선택 정렬을 일상생활 비유로 도입 (예: 키 순서대로 줄 세우기)\n- 각 알고리즘의 동작 과정을 단계별로 보여주는 예시 (숫자 5개)\n- 스크래치 블록 코딩 → 파이썬 코드 순서로 구현\n- 두 알고리즘의 비교 표 (비교 횟수, 교환 횟수, 장단점)\n- 생각해보기: "카드 10장을 가장 빠르게 정렬하는 나만의 방법은?"\n- 평가: 트레이싱 문제 2개 + 코딩 문제 1개 (정답·해설 포함)' },
       { name: '추상화와 분해', prompt: '고등학교 "정보" 수업에서 **"문제 분해와 추상화"**를 가르치는 교육자료를 작성해주세요.\n\n조건:\n- 실생활 문제: "학교 축제 부스 배치 최적화"를 예시로 사용\n- 문제 분해: 큰 문제를 하위 문제 5개로 나누는 과정을 시각적으로 표현\n- 추상화: 불필요한 정보를 제거하고 핵심 변수만 추출하는 과정 시연\n- 패턴 인식: 유사한 문제(교실 좌석 배치, 주차장 배치)와의 공통점 발견\n- 알고리즘 설계: 분해된 하위 문제 각각의 해결 절차를 의사코드로 작성\n- 학생 활동: 모둠별로 "급식 메뉴 최적화" 문제를 분해·추상화하는 워크시트' },
@@ -68,7 +68,7 @@ const RANK_STYLES = [
   { bg: 'bg-gray-400', text: 'text-white', border: 'border-gray-400', ring: 'ring-gray-300' },
   { bg: 'bg-orange-600', text: 'text-white', border: 'border-orange-600', ring: 'ring-orange-300' },
   { bg: 'bg-sky-500', text: 'text-white', border: 'border-sky-500', ring: 'ring-sky-300' },
-  { bg: 'bg-indigo-500', text: 'text-white', border: 'border-indigo-500', ring: 'ring-indigo-300' },
+  { bg: 'bg-emerald-500', text: 'text-white', border: 'border-emerald-500', ring: 'ring-emerald-300' },
 ];
 const PROVIDER_BADGES = {
   anthropic: 'bg-orange-100 text-orange-800',
@@ -119,19 +119,22 @@ export default function ModelCompare() {
   const batchAbortRef = useRef(false);
   const printRef = useRef(null);
 
+  const [serverProviders, setServerProviders] = useState({});
+
   useEffect(() => {
     apiFetch('/api/models').then(({ models }) => setAllModels(models)).catch(() => {});
+    apiFetch('/api/auth/status').then((d) => setServerProviders(d.serverProviders || {})).catch(() => {});
   }, []);
 
   const availableModels = useMemo(() => {
     const keys = {
-      anthropic: !!localStorage.getItem('eduflow_api_key'),
-      openai: !!localStorage.getItem('eduflow_openai_key'),
-      google: !!localStorage.getItem('eduflow_google_key'),
-      upstage: !!localStorage.getItem('eduflow_upstage_key'),
+      anthropic: serverProviders.anthropic || !!getApiKey('anthropic'),
+      openai: serverProviders.openai || !!getApiKey('openai'),
+      google: serverProviders.google || !!getApiKey('google'),
+      upstage: serverProviders.upstage || !!getApiKey('upstage'),
     };
     return allModels.filter((m) => keys[m.provider]);
-  }, [allModels]);
+  }, [allModels, serverProviders]);
 
   const blind = mode === 'blind';
   const modelsToRun = useMemo(() => {
@@ -451,7 +454,7 @@ export default function ModelCompare() {
         <div className="flex items-center gap-3">
           {phase !== 'idle' && (
             <>
-              <span className={`px-3 py-1.5 rounded-lg text-sm font-medium ${isAutoMode ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'}`}>
+              <span className={`px-3 py-1.5 rounded-lg text-sm font-medium ${isAutoMode ? 'bg-emerald-100 text-emerald-800' : 'bg-emerald-100 text-emerald-800'}`}>
                 {phase === 'prelim' || phase === 'prelim-rank' ? '예선'
                   : phase === 'done' ? '최종 결과'
                   : phase === 'auto-running' ? (batchQueue.length > 0 ? `일괄 ${batchIndex + 1}/${batchQueue.length}` : '모델 생성 중')
@@ -475,7 +478,7 @@ export default function ModelCompare() {
             <div className="flex rounded-lg border border-gray-300 overflow-hidden">
               {[{ key: 'blind', label: '블라인드 (익명)' }, { key: 'open', label: '공개 (모델 선택)' }, { key: 'auto', label: 'AI 자동 평가' }].map(({ key, label }) => (
                 <button key={key} onClick={() => setMode(key)}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${mode === key ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{label}</button>
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${mode === key ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{label}</button>
               ))}
             </div>
           </div>
@@ -490,9 +493,9 @@ export default function ModelCompare() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {models.map((m) => { const checked = selectedModelIds.includes(m.id); return (
-                      <label key={m.id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-all ${checked ? 'border-indigo-400 bg-indigo-50 text-indigo-800' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
+                      <label key={m.id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-all ${checked ? 'border-emerald-400 bg-emerald-50 text-emerald-800' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
                         <input type="checkbox" checked={checked} onChange={() => toggleModelSelection(m.id)} className="sr-only" />
-                        <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}`}>
+                        <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
                           {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                         </span>
                         <span className="font-medium">{m.display_name}</span>
@@ -524,7 +527,7 @@ export default function ModelCompare() {
             {['예선', '1회', '2회', '3회', '결과'].map((label, i) => {
               const active = (i === 0 && (phase === 'prelim' || phase === 'prelim-rank')) || (i >= 1 && i <= 3 && ((phase === 'finals-prompt' || phase === 'finals' || phase === 'finals-rank') && round === i)) || (i === 4 && phase === 'done');
               const done = (i === 0 && phase !== 'prelim' && phase !== 'prelim-rank') || (i >= 1 && i <= 3 && (((phase === 'finals-prompt' || phase === 'finals' || phase === 'finals-rank') && round > i) || phase === 'done'));
-              return (<div key={label} className="flex-1"><div className={`h-2 rounded-full ${done ? 'bg-indigo-500' : active ? 'bg-indigo-300 animate-pulse' : 'bg-gray-200'}`} /><p className={`text-xs mt-1 text-center ${active ? 'text-indigo-700 font-medium' : done ? 'text-indigo-500' : 'text-gray-400'}`}>{label}</p></div>);
+              return (<div key={label} className="flex-1"><div className={`h-2 rounded-full ${done ? 'bg-emerald-500' : active ? 'bg-emerald-300 animate-pulse' : 'bg-gray-200'}`} /><p className={`text-xs mt-1 text-center ${active ? 'text-emerald-700 font-medium' : done ? 'text-emerald-500' : 'text-gray-400'}`}>{label}</p></div>);
             })}
           </div>
         </div>
@@ -577,7 +580,7 @@ export default function ModelCompare() {
                     <button key={p.name} onClick={() => setPrompt(p.prompt)} disabled={!canEditPrompt && phase !== 'auto-done'}
                       className={`px-3 py-1 rounded-full text-xs transition-colors disabled:opacity-40 ${
                         tested ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
-                        roundPrompts.includes(p.prompt) ? 'bg-gray-100 text-gray-400 line-through' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                        roundPrompts.includes(p.prompt) ? 'bg-gray-100 text-gray-400 line-through' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                       }`}>{p.name} {tested && '(완료)'}</button>
                   );
                 })}
@@ -585,7 +588,7 @@ export default function ModelCompare() {
             ))}
           </div>
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} disabled={!canEditPrompt && phase !== 'auto-done'}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-50"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-50"
             placeholder={isAutoMode ? '개별 테스트할 프롬프트를 선택하거나 입력하세요...' : phase === 'finals-prompt' ? `${round}회차에 사용할 프롬프트를 입력하세요...` : '비교할 프롬프트를 입력하세요...'} />
           {(phase === 'idle' || (isAutoMode && phase === 'auto-done')) && (
             <div className="flex items-center gap-3 flex-wrap">
@@ -597,7 +600,7 @@ export default function ModelCompare() {
                   </button>
                   {phase === 'idle' && (
                     <button onClick={runBatchEvaluate} disabled={modelsToRun.length < 2 || running}
-                      className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-sm font-medium hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 transition-all">
+                      className="px-5 py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 text-white rounded-lg text-sm font-medium hover:from-teal-700 hover:to-emerald-700 disabled:opacity-50 transition-all">
                       전체 문제 일괄 테스트 ({ALL_PRESETS.length}개)
                     </button>
                   )}
@@ -610,7 +613,7 @@ export default function ModelCompare() {
                 </>
               ) : (
                 <button onClick={startTournament} disabled={!prompt.trim() || modelsToRun.length < 2}
-                  className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all">
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg text-sm font-medium hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-all">
                   {blind ? `토너먼트 시작 (${modelsToRun.length}개 모델)` : `비교 시작 (${modelsToRun.length}개 모델)`}
                 </button>
               )}
@@ -619,7 +622,7 @@ export default function ModelCompare() {
           )}
           {phase === 'finals-prompt' && (
             <button onClick={startFinalsRound} disabled={!prompt.trim()}
-              className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg text-sm font-medium hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 transition-all">
+              className="px-5 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-lg text-sm font-medium hover:from-green-700 hover:to-teal-700 disabled:opacity-50 transition-all">
               {round}회차 시작
             </button>
           )}
@@ -644,9 +647,9 @@ export default function ModelCompare() {
 
       {/* 예선 Top 5 */}
       {phase === 'prelim-rank' && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-center">
-          <p className="text-indigo-800 font-medium">예선 완료! Top {Math.min(TOP_N, validModels.length)}개를 골라주세요</p>
-          <p className="text-indigo-600 text-sm mt-1">{rankings.length}/{Math.min(TOP_N, validModels.length)} 선택</p>
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+          <p className="text-emerald-800 font-medium">예선 완료! Top {Math.min(TOP_N, validModels.length)}개를 골라주세요</p>
+          <p className="text-emerald-600 text-sm mt-1">{rankings.length}/{Math.min(TOP_N, validModels.length)} 선택</p>
           {rankings.length > 0 && <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">{rankings.map((mid) => { const idx = shuffledOrder.indexOf(mid); return <span key={mid} className={`text-sm font-medium px-2.5 py-1 rounded border ${getLabelColor(idx)}`}>{blind ? LABELS[idx] : getModelInfo(mid).display_name}</span>; })}</div>}
           <div className="mt-3 flex justify-center gap-2">
             <button onClick={confirmTop5} disabled={rankings.length < Math.min(TOP_N, validModels.length)} className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg text-sm font-bold disabled:opacity-40 transition-all">
@@ -659,12 +662,12 @@ export default function ModelCompare() {
 
       {/* 결선 순위 */}
       {phase === 'finals-rank' && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
-          <p className="text-purple-800 font-medium">{round}회차 완료! 순위를 매겨주세요</p>
-          <p className="text-purple-600 text-sm mt-1">클릭 순서 = 1등 → 2등 → ... ({rankings.length}/{validModels.length})</p>
+        <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 text-center">
+          <p className="text-teal-800 font-medium">{round}회차 완료! 순위를 매겨주세요</p>
+          <p className="text-teal-600 text-sm mt-1">클릭 순서 = 1등 → 2등 → ... ({rankings.length}/{validModels.length})</p>
           {rankings.length > 0 && <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">{rankings.map((mid, i) => { const style = RANK_STYLES[i] || { bg: 'bg-gray-300', text: 'text-white' }; const idx = shuffledOrder.indexOf(mid); return (<div key={mid} className="flex items-center gap-1"><span className={`w-6 h-6 rounded-full ${style.bg} ${style.text} flex items-center justify-center text-xs font-bold`}>{i + 1}</span><span className={`text-sm font-medium px-2 py-0.5 rounded border ${getLabelColor(idx)}`}>{blind ? LABELS[idx] : getModelInfo(mid).display_name}</span>{i < rankings.length - 1 && <span className="text-gray-300 mx-1">{'>'}</span>}</div>); })}</div>}
           <div className="mt-3 flex justify-center gap-2">
-            <button onClick={confirmFinalsRanking} disabled={rankings.length < validModels.length} className="px-6 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-bold disabled:opacity-40 transition-all">
+            <button onClick={confirmFinalsRanking} disabled={rankings.length < validModels.length} className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg text-sm font-bold disabled:opacity-40 transition-all">
               {rankings.length < validModels.length ? `${validModels.length - rankings.length}개 남음` : round < TOTAL_ROUNDS ? `확정 → ${round + 1}회차` : '확정 → 최종 결과!'}
             </button>
             {rankings.length > 0 && <button onClick={() => setRankings([])} className="text-sm text-gray-500 hover:text-gray-700">초기화</button>}
@@ -688,7 +691,7 @@ export default function ModelCompare() {
               </div>
             ); })}
           </div>
-          <div className="text-center mt-4"><button onClick={resetAll} className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">새 비교</button></div>
+          <div className="text-center mt-4"><button onClick={resetAll} className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700">새 비교</button></div>
         </div>
       )}
 
@@ -810,7 +813,7 @@ export default function ModelCompare() {
             const info = getModelInfo(modelId);
             return (
               <div key={modelId} onClick={() => canClick && handleRankToggle(modelId)}
-                className={`bg-white rounded-xl border-2 flex flex-col overflow-hidden transition-all ${rank ? `${rankStyle.border} ring-2 ${rankStyle.ring} shadow-md` : 'border-gray-200'} ${canClick ? 'cursor-pointer hover:border-indigo-300 hover:shadow-md' : ''}`}>
+                className={`bg-white rounded-xl border-2 flex flex-col overflow-hidden transition-all ${rank ? `${rankStyle.border} ring-2 ${rankStyle.ring} shadow-md` : 'border-gray-200'} ${canClick ? 'cursor-pointer hover:border-emerald-300 hover:shadow-md' : ''}`}>
                 <div className={`px-4 py-3 border-b bg-gray-50 flex items-center justify-between ${rank ? rankStyle.border : 'border-gray-200'}`}>
                   <div className="flex items-center gap-2">
                     {rank ? <span className={`w-8 h-8 rounded-full ${rankStyle.bg} ${rankStyle.text} flex items-center justify-center text-sm font-bold`}>{rank}</span>
@@ -822,7 +825,7 @@ export default function ModelCompare() {
                     </div>
                   </div>
                   <div className="text-right">
-                    {r.status === 'streaming' && <span className="inline-flex items-center gap-1 text-xs text-blue-600"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />생성 중</span>}
+                    {r.status === 'streaming' && <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />생성 중</span>}
                     {r.status === 'done' && <p className="text-xs text-gray-500">{r.charCount?.toLocaleString()}자 / {r.elapsed}s</p>}
                     {r.status === 'error' && <span className="text-xs text-red-500">오류</span>}
                     {r.status === 'waiting' && <span className="text-xs text-gray-400">대기 중...</span>}
@@ -831,7 +834,7 @@ export default function ModelCompare() {
                 <div className="flex-1 p-4 overflow-y-auto max-h-[400px] text-sm">
                   {r.status === 'error' ? <p className="text-red-500">{r.error}</p>
                     : r.text ? <div className="prose prose-sm max-w-none"><ReactMarkdown>{r.text}</ReactMarkdown></div>
-                    : r.status === 'waiting' ? <div className="flex items-center justify-center h-20"><div className="w-6 h-6 border-2 border-gray-300 border-t-indigo-500 rounded-full animate-spin" /></div>
+                    : r.status === 'waiting' ? <div className="flex items-center justify-center h-20"><div className="w-6 h-6 border-2 border-gray-300 border-t-emerald-500 rounded-full animate-spin" /></div>
                     : null}
                 </div>
               </div>

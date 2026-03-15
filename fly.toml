@@ -12,7 +12,7 @@ primary_region = 'nrt'
 
 [mounts]
   source = 'eduflow_data'
-  destination = '/data/projects'
+  destination = '/data'
 
 [[vm]]
   memory = '512mb'
