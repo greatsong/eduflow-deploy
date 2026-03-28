@@ -21,12 +21,47 @@ Google 로그인, 관리자 대시보드, 사용자 승인 시스템, 멀티 AI 
 2. **공통 기능** (동기화 필요): 템플릿, AI 프롬프트, 챕터 생성 로직, 모델 설정, UI 컴포넌트, 서비스 로직, MkDocs/DOCX 배포
 3. **로컬 전용 기능**: API 키 직접 입력 (서버 제공 없음), 인증 없는 자유 접근
 
+### ⚠️ 동기화 시 주의사항
+| 파일/디렉토리 | 동기화 방향 | 주의 |
+|---|---|---|
+| `server/services/*.js` | deploy → local | **전부 복사 가능** (인증 무관) |
+| `server/routes/*.js` | deploy → local | **auth.js 제외**, 나머지는 `requireAuth`/`requireApproved` 미들웨어 참조 제거 필요 |
+| `server/assets/*.js, *.css` | deploy → local | **그대로 복사** |
+| `client/src/pages/*.jsx` | deploy → local | **Admin.jsx, EntryForm.jsx 제외**, 나머지는 `getAuthToken()` 참조 제거 필요 |
+| `client/src/api/client.js` | **복사 금지** | deploy는 JWT, local은 API 키 직접 입력 방식이 다름 |
+| `templates/**/*.json` | deploy → local | **그대로 복사** |
+| `shared/constants.js` | deploy → local | **그대로 복사** |
+
 ### 동기화 프로세스
 ```
 1. eduflow-deploy에서 기능 개발/수정
 2. 테스트 & 배포 (fly deploy)
 3. 변경 내용 중 공통 부분을 eduflow에 반영
 4. eduflow 로컬 빌드 테스트 (npm run build)
+```
+
+### 동기화 체크리스트 (매 변경 후)
+```bash
+# 서비스 (전부 복사)
+cp server/services/*.js ../eduflow/server/services/
+
+# 자산 (전부 복사)
+cp server/assets/*.js server/assets/*.css ../eduflow/server/assets/
+
+# 템플릿 (전부 복사)
+cp -r templates/ ../eduflow/templates/
+
+# 공유 상수
+cp shared/constants.js ../eduflow/shared/
+
+# 라우트 (auth.js 제외, 수동 확인 필요)
+# ⚠️ requireAuth, requireApproved, getAuthToken 참조 제거 확인
+
+# 프론트엔드 (Admin.jsx, EntryForm.jsx 제외, 수동 확인 필요)
+# ⚠️ getAuthToken() 참조 제거 확인
+
+# 빌드 확인
+cd ../eduflow && npm run build
 ```
 
 ## 기술 스택
