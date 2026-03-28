@@ -67,6 +67,39 @@ router.post('/generation-cancel', asyncHandler(async (req, res) => {
   res.json({ success: cancelled, message: cancelled ? '취소 요청됨' : '실행 중인 생성이 없습니다' });
 }));
 
+// GET /api/projects/:id/chapters/images - 이미지 목록
+router.get('/images', asyncHandler(async (req, res) => {
+  const imagesDir = join(projectPath(req.params.id), 'docs', 'images');
+  if (!existsSync(imagesDir)) {
+    return res.json([]);
+  }
+  const { readdir: rd, stat: st } = await import('fs/promises');
+  const files = await rd(imagesDir);
+  const images = [];
+  for (const f of files) {
+    if (/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f)) {
+      const s = await st(join(imagesDir, f));
+      images.push({ name: f, size: s.size, created: s.birthtime });
+    }
+  }
+  res.json(images);
+}));
+
+// GET /api/projects/:id/chapters/images/:filename - 이미지 파일 서빙
+router.get('/images/:filename', (req, res, next) => {
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+  }
+  next();
+}, asyncHandler(async (req, res) => {
+  const filename = req.params.filename.replace(/[^a-zA-Z0-9._-]/g, '');
+  const filePath = join(projectPath(req.params.id), 'docs', 'images', filename);
+  if (!existsSync(filePath)) {
+    return res.status(404).json({ message: '이미지를 찾을 수 없습니다' });
+  }
+  res.sendFile(filePath);
+}));
+
 // GET /api/projects/:id/chapters/:chapterId - 챕터 내용 읽기
 router.get('/:chapterId', asyncHandler(async (req, res) => {
   const gen = new ChapterGenerator(projectPath(req.params.id));
@@ -330,42 +363,6 @@ ${imagePrompt}
     sseSend(res, { type: 'error', message: e.message });
   }
   res.end();
-}));
-
-// GET /api/projects/:id/chapters/images - 이미지 목록
-router.get('/images', asyncHandler(async (req, res) => {
-  const imagesDir = join(projectPath(req.params.id), 'docs', 'images');
-  if (!existsSync(imagesDir)) {
-    return res.json([]);
-  }
-  const { readdir: rd, stat: st } = await import('fs/promises');
-  const files = await rd(imagesDir);
-  const images = [];
-  for (const f of files) {
-    if (/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f)) {
-      const s = await st(join(imagesDir, f));
-      images.push({ name: f, size: s.size, created: s.birthtime });
-    }
-  }
-  res.json(images);
-}));
-
-// GET /api/projects/:id/chapters/images/:filename - 이미지 파일 서빙
-// img 태그에서 직접 로드하므로 인증은 상위 미들웨어(requireAuth)에서 처리됨
-// 쿼리 파라미터 token도 지원 (img src에서는 헤더 불가)
-router.get('/images/:filename', (req, res, next) => {
-  // 쿼리 파라미터 토큰 지원: ?token=xxx → Authorization 헤더로 변환
-  if (!req.headers.authorization && req.query.token) {
-    req.headers.authorization = `Bearer ${req.query.token}`;
-  }
-  next();
-}, asyncHandler(async (req, res) => {
-  const filename = req.params.filename.replace(/[^a-zA-Z0-9._-]/g, '');
-  const filePath = join(projectPath(req.params.id), 'docs', 'images', filename);
-  if (!existsSync(filePath)) {
-    return res.status(404).json({ message: '이미지를 찾을 수 없습니다' });
-  }
-  res.sendFile(filePath);
 }));
 
 export default router;
