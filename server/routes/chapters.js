@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { join, dirname } from 'path';
+import { existsSync } from 'fs';
+import { readdir } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { requireApiKey, requireModelAccess } from '../middleware/apiKey.js';
