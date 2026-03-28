@@ -214,12 +214,41 @@ export class Deployment {
     // 커스텀 JS 복사 (헤더 제목 클릭, Mermaid 설정, 스크롤 프로그레스)
     const jsDir = join(this.docsPath, 'javascripts');
     if (!existsSync(jsDir)) await mkdir(jsDir, { recursive: true });
+
+    // 기본 JS 파일 (항상 복사)
     const jsFiles = [
       { src: 'mkdocs-title-link.js', dest: 'title-link.js' },
       { src: 'mermaid-config.js', dest: 'mermaid-config.js' },
       { src: 'scroll-progress.js', dest: 'scroll-progress.js' },
-      { src: 'circuit-diagrams.js', dest: 'circuit-diagrams.js' },
     ];
+
+    // 조건부 JS: circuit-diagrams.js — template-info.json의 required_assets 또는 config.include_hw_diagrams 확인
+    let needsCircuitDiagrams = false;
+    const templateInfoPath = join(this.projectPath, 'template-info.json');
+    if (existsSync(templateInfoPath)) {
+      try {
+        const templateInfo = JSON.parse(await readFile(templateInfoPath, 'utf-8'));
+        const requiredJs = templateInfo?.required_assets?.javascript || [];
+        if (requiredJs.includes('circuit-diagrams.js')) {
+          needsCircuitDiagrams = true;
+        }
+      } catch { /* ignore */ }
+    }
+    if (!needsCircuitDiagrams) {
+      const configPath = join(this.projectPath, 'config.json');
+      if (existsSync(configPath)) {
+        try {
+          const config = JSON.parse(await readFile(configPath, 'utf-8'));
+          if (config.include_hw_diagrams) {
+            needsCircuitDiagrams = true;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+    if (needsCircuitDiagrams) {
+      jsFiles.push({ src: 'circuit-diagrams.js', dest: 'circuit-diagrams.js' });
+    }
+
     for (const jf of jsFiles) {
       const srcPath = join(__dirname, '..', 'assets', jf.src);
       if (existsSync(srcPath)) {
@@ -336,7 +365,7 @@ extra_javascript:
   - javascripts/title-link.js
   - javascripts/mermaid-config.js
   - javascripts/scroll-progress.js
-
+${needsCircuitDiagrams ? '  - javascripts/circuit-diagrams.js\n' : ''}
 extra_css:
   - stylesheets/custom.css
 

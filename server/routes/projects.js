@@ -210,6 +210,7 @@ router.get('/templates/samples/:templateId', asyncHandler(async (req, res) => {
     'teacher-guide-4c': '6.',
     'workshop-material': '7.',
     'class-preview': '8.',
+    'lesson-per-session': '9.',
   };
 
   const sectionPrefix = sectionMap[templateId];

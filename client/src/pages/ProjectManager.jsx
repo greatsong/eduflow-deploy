@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '../stores/projectStore';
 import { apiFetch, apiStreamPost, API_BASE } from '../api/client';
+import { getAuthToken } from '../components/EntryForm';
 
 const TABS = ['프로젝트 설정', '참고자료', '프롬프트 설정', '빠른 시작'];
 
@@ -582,8 +583,11 @@ function ReferencesTab({ projectId }) {
     for (const f of fileList) formData.append('files', f);
 
     try {
+      const headers = {};
+      const token = getAuthToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       await fetch(`${API_BASE}/api/projects/${projectId}/references`, {
-        method: 'POST', body: formData,
+        method: 'POST', headers, body: formData,
       });
       await loadFiles();
     } catch { }
@@ -608,7 +612,7 @@ function ReferencesTab({ projectId }) {
           <span className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-emerald-700">
             {uploading ? '업로드 중...' : '📤 파일 선택 및 업로드'}
           </span>
-          <input type="file" multiple accept=".md,.txt,.markdown,.docx,.pdf"
+          <input type="file" multiple accept=".md,.txt,.markdown,.docx,.pdf,.csv,.xlsx,.xls,.json"
             onChange={handleUpload} className="hidden" />
         </label>
       </div>

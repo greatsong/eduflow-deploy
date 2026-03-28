@@ -465,7 +465,8 @@ function BatchTab({ project, onComplete }) {
   const [chapters, setChapters] = useState([]);
   const [report, setReport] = useState(null);
   const [model, setModel] = useState('claude-opus-4-5-20251101');
-  const [maxTokens, setMaxTokens] = useState(12000);
+  const [charTarget, setCharTarget] = useState(6000); // 챕터당 목표 글자 수
+  const maxTokens = Math.round(charTarget * 1.15); // 한국어: 1토큰≈1자 + 15% 마크다운 버퍼
   const [concurrent, setConcurrent] = useState(5);
   const [tpmLimit, setTpmLimit] = useState(200000);
   const [status, setStatus] = useState('idle'); // idle, running, completed, cancelled
@@ -914,17 +915,25 @@ function BatchTab({ project, onComplete }) {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">최대 토큰: {maxTokens.toLocaleString()}</label>
+            <label className="block text-xs text-gray-500 mb-1">
+              챕터당 목표 글자 수: ~{charTarget.toLocaleString()}자
+              <span className="text-gray-400 ml-1">(토큰: {maxTokens.toLocaleString()})</span>
+            </label>
             <input
               type="range"
               min={2000}
-              max={16000}
-              step={1000}
-              value={maxTokens}
-              onChange={(e) => setMaxTokens(Number(e.target.value))}
+              max={12000}
+              step={500}
+              value={charTarget}
+              onChange={(e) => setCharTarget(Number(e.target.value))}
               disabled={status === 'running'}
               className="w-full"
             />
+            <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+              <span>간결 (2,000자)</span>
+              <span>표준 (6,000자)</span>
+              <span>상세 (12,000자)</span>
+            </div>
           </div>
 
           <div>
@@ -1132,9 +1141,9 @@ function EstimatedCost({ model, models, maxTokens, chapterCount }) {
 
   const { input: inputPrice, output: outputPrice } = modelInfo.pricing;
   // 실제 프롬프트: 시스템(3~5K) + docStructure(2~4K) + templateAddition(2~4K) + 아웃라인(1~3K) + 참고자료(5~20K) + 이전챕터참조(10~30K)
-  const estimatedInputPerChapter = 40000; // 평균 입력 토큰 (프롬프트 + 아웃라인 + 참고자료 + 이전 챕터)
-  // 실제 출력은 maxTokens의 약 70~90% 사용
-  const estimatedOutputPerChapter = Math.round(maxTokens * 0.8);
+  const estimatedInputPerChapter = 40000;
+  // 한국어: 출력 토큰 ≈ 글자 수 (1:1). 서버에서 시간 기반 캡 적용됨
+  const estimatedOutputPerChapter = Math.round(maxTokens * 0.85);
   const totalInput = chapterCount * estimatedInputPerChapter;
   const totalOutput = chapterCount * estimatedOutputPerChapter;
   const inputCost = (totalInput / 1_000_000) * inputPrice;
@@ -1146,7 +1155,7 @@ function EstimatedCost({ model, models, maxTokens, chapterCount }) {
 
   return (
     <div className="text-xs text-amber-700 space-y-0.5">
-      <p>{chapterCount}개 챕터 × 입력 ~{estimatedInputPerChapter.toLocaleString()} + 출력 ~{estimatedOutputPerChapter.toLocaleString()} 토큰</p>
+      <p>{chapterCount}개 챕터 × ~{estimatedOutputPerChapter.toLocaleString()}자 출력</p>
       <p className="font-semibold">~${totalCost.toFixed(2)} (약 {krwTotal.toLocaleString()}원)</p>
       <p className="text-amber-600">입력 ${inputCost.toFixed(2)} + 출력 ${outputCost.toFixed(2)}</p>
     </div>

@@ -95,12 +95,19 @@ export class TemplateManager {
 
       // template-info.json 저장
       const templateInfoFile = join(projectPath, 'template-info.json');
-      await writeFile(templateInfoFile, JSON.stringify({
+      const templateInfoData = {
         template_id: templateId,
         template_name: template.name,
         toc_prompt_addition: template.toc_prompt_addition || '',
         chapter_prompt_addition: template.chapter_prompt_addition || '',
-      }, null, 2), 'utf-8');
+      };
+      if (template.required_assets) {
+        templateInfoData.required_assets = template.required_assets;
+      }
+      if (template.validation) {
+        templateInfoData.validation = template.validation;
+      }
+      await writeFile(templateInfoFile, JSON.stringify(templateInfoData, null, 2), 'utf-8');
 
       return true;
     } catch (e) {
