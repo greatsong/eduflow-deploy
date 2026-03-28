@@ -381,9 +381,25 @@ router.post('/:chapterId/regenerate-image', requireApiKey, asyncHandler(async (r
 
   try {
     const { ImageGenerator } = await import('../services/imageGenerator.js');
-    const imgGen = new ImageGenerator(googleApiKey);
+    const imgGen = new ImageGenerator(googleApiKey, undefined, tokenUsage, {
+      userId: req.user?.googleId,
+      userName: req.user?.name,
+      userEmail: req.user?.email,
+      projectId: req.params.id,
+    });
     const docsPath = join(projectPath(req.params.id), 'docs');
     const result = await imgGen.generateSingle(newPrompt, imageName, docsPath);
+
+    // 이미지 생성도 토큰 사용량으로 기록
+    tokenUsage.record({
+      userId: req.user?.googleId, userName: req.user?.name,
+      userEmail: req.user?.email,
+      projectId: req.params.id, action: 'image-regenerate',
+      provider: 'google', model: imgGen.model,
+      inputTokens: 0, outputTokens: 0,
+      keySource: 'server',
+    });
+
     res.json({ success: true, ...result });
   } catch (e) {
     res.status(500).json({ message: `이미지 생성 실패: ${e.message}` });

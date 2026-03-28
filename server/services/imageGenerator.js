@@ -23,9 +23,33 @@ const IMAGE_MODELS = [
 const MAX_CONCURRENT = 3;
 
 export class ImageGenerator {
-  constructor(apiKey, model = IMAGE_MODELS[0]) {
+  /**
+   * @param {string} apiKey - Google API 키
+   * @param {string} [model] - 사용할 모델
+   * @param {object} [usageTracker] - { record(data) } 토큰 사용량 기록기
+   * @param {object} [userInfo] - { userId, userName, userEmail, projectId }
+   */
+  constructor(apiKey, model = IMAGE_MODELS[0], usageTracker = null, userInfo = {}) {
     this.client = new GoogleGenAI({ apiKey });
     this.model = model;
+    this.usageTracker = usageTracker;
+    this.userInfo = userInfo;
+  }
+
+  _recordUsage(modelUsed, success) {
+    if (!this.usageTracker) return;
+    try {
+      this.usageTracker.record({
+        ...this.userInfo,
+        action: 'image-generation',
+        provider: 'google',
+        model: modelUsed,
+        inputTokens: 0,
+        outputTokens: 0,
+        imageCount: success ? 1 : 0,
+        keySource: 'server',
+      });
+    } catch { /* fire-and-forget */ }
   }
 
   findPlaceholders(markdown) {
@@ -95,6 +119,7 @@ export class ImageGenerator {
           for (const part of response.candidates[0].content.parts) {
             if (part.inlineData) {
               console.log(`이미지 생성 성공 (모델: ${modelName})`);
+              this._recordUsage(modelName, true);
               return {
                 success: true,
                 imageData: part.inlineData.data,
@@ -105,7 +130,7 @@ export class ImageGenerator {
         }
       } catch (error) {
         console.error(`이미지 생성 실패 (${modelName}):`, error.message);
-        // 다음 모델로 폴백
+        this._recordUsage(modelName, false);
         continue;
       }
     }
