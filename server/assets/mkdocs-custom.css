@@ -1653,7 +1653,11 @@ summary:focus-visible {
 }
 
 /* MkDocs 기본 footer nav 숨김 (커스텀 네비게이션 사용) */
-.md-footer__inner { display: none; }
+.md-footer__inner,
+nav.md-footer__inner,
+.md-footer .md-footer__inner {
+  display: none !important;
+}
 
 /* 챕터 네비게이션 */
 .ef-chapter-nav {

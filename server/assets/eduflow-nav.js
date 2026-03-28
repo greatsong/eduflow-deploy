@@ -92,10 +92,16 @@
       nav.appendChild(nextBtn);
     }
 
-    // 콘텐츠 하단에 삽입 (기존 footer nav 전에)
+    // 콘텐츠 하단에 삽입
     var article = document.querySelector('.md-content__inner');
     if (article) {
       article.appendChild(nav);
+    }
+
+    // MkDocs 기본 footer nav 숨기기 (커스텀으로 대체)
+    var footerInner = document.querySelector('.md-footer__inner');
+    if (footerInner) {
+      footerInner.style.display = 'none';
     }
   }
 
