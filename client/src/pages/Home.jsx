@@ -27,7 +27,7 @@ export default function Home() {
               </span>
             </h1>
             <p className="text-lg text-emerald-100/90 mb-2 leading-relaxed max-w-lg">
-              AI와 함께, 교육 콘텐츠를 물 흐르듯 만들어보세요.
+              선생님과 AI가 함께 만드는 오픈소스 교육자료 생성 플랫폼
             </p>
             <p className="text-sm text-emerald-200/70 italic mb-8">
               "좋은 수업 아이디어를 체계적인 교육자료로"
