@@ -289,6 +289,48 @@ export default function Home() {
 
       {/* 개발자 편지 */}
       <DeveloperLetter />
+
+      {/* 릴리즈 노트 모달 */}
+      {showReleaseNotes && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowReleaseNotes(false)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold">🎉 새로운 소식</h2>
+                  <p className="text-emerald-100 text-xs mt-0.5">{RELEASE_NOTES[0].version} · {RELEASE_NOTES[0].date}</p>
+                </div>
+                <button onClick={() => setShowReleaseNotes(false)} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-sm transition-colors">✕</button>
+              </div>
+            </div>
+            <div className="overflow-y-auto max-h-[60vh] px-6 py-4 space-y-4">
+              {RELEASE_NOTES[0].sections.map((section, idx) => (
+                <div key={idx}>
+                  <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2 mb-2">
+                    <span className="text-base">{section.icon}</span>
+                    {section.title}
+                  </h3>
+                  <ul className="space-y-1 ml-7">
+                    {section.items.map((item, i) => (
+                      <li key={i} className="text-xs text-gray-600 leading-relaxed flex items-start gap-1.5">
+                        <span className="text-emerald-400 mt-0.5 shrink-0">•</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 text-center">
+              <button onClick={() => setShowReleaseNotes(false)} className="px-6 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors">확인</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -425,62 +467,6 @@ function DeveloperLetter() {
         </div>
       </div>
 
-      {/* 릴리즈 노트 모달 */}
-      {showReleaseNotes && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowReleaseNotes(false)}>
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div
-            className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* 헤더 */}
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold">🎉 새로운 소식</h2>
-                  <p className="text-emerald-100 text-xs mt-0.5">{RELEASE_NOTES[0].version} · {RELEASE_NOTES[0].date}</p>
-                </div>
-                <button
-                  onClick={() => setShowReleaseNotes(false)}
-                  className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-sm transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            {/* 본문 */}
-            <div className="overflow-y-auto max-h-[60vh] px-6 py-4 space-y-4">
-              {RELEASE_NOTES[0].sections.map((section, idx) => (
-                <div key={idx}>
-                  <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2 mb-2">
-                    <span className="text-base">{section.icon}</span>
-                    {section.title}
-                  </h3>
-                  <ul className="space-y-1 ml-7">
-                    {section.items.map((item, i) => (
-                      <li key={i} className="text-xs text-gray-600 leading-relaxed flex items-start gap-1.5">
-                        <span className="text-emerald-400 mt-0.5 shrink-0">•</span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-
-            {/* 푸터 */}
-            <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 text-center">
-              <button
-                onClick={() => setShowReleaseNotes(false)}
-                className="px-6 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
-              >
-                확인
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
