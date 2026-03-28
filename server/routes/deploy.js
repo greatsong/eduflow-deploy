@@ -33,11 +33,21 @@ router.get('/status', asyncHandler(async (req, res) => {
     if (result.success) ghUser = result.username;
   }
 
+  // 이전 배포 기록 로드
+  let deploymentInfo = null;
+  const deployInfoPath = join(projectPath(req.params.id), 'deployment_info.json');
+  if (existsSync(deployInfoPath)) {
+    try {
+      deploymentInfo = JSON.parse(await readFile(deployInfoPath, 'utf-8'));
+    } catch { /* ignore */ }
+  }
+
   res.json({
     tools,
     chapterCount: chapters.length,
     hasMkdocsYml,
     ghUser,
+    deploymentInfo,
   });
 }));
 

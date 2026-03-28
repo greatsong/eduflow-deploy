@@ -195,7 +195,23 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
         setSuggestions(names);
         if (!repoName && names.length > 0) setRepoName(names[0]);
       });
-  }, [project]);
+
+    // 이전 배포 기록 로드
+    if (status?.deploymentInfo) {
+      setDeployResult({
+        success: true,
+        site_url: status.deploymentInfo.site_url,
+        repo_url: status.deploymentInfo.repo_url,
+        username: status.deploymentInfo.username,
+        deployed_at: status.deploymentInfo.deployed_at,
+        restored: true, // 이전 기록 복원 표시
+      });
+      if (status.deploymentInfo.repo_url) {
+        const match = status.deploymentInfo.repo_url.match(/\/([^/]+)$/);
+        if (match) setRepoName(match[1]);
+      }
+    }
+  }, [project, status]);
 
   const handleGenerateConfig = async () => {
     setLoading(true);
@@ -538,11 +554,18 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <div>
-                          <p className="font-semibold text-green-800">✅ 배포 완료!</p>
+                          <p className="font-semibold text-green-800">
+                            ✅ {deployResult.restored ? '이전 배포 기록' : '배포 완료!'}
+                          </p>
                           <a href={deployResult.site_url} target="_blank" rel="noopener noreferrer"
                             className="text-green-700 underline font-medium text-sm">
                             🌐 {deployResult.site_url}
                           </a>
+                          {deployResult.deployed_at && (
+                            <p className="text-xs text-green-600 mt-0.5">
+                              📅 {new Date(deployResult.deployed_at).toLocaleString('ko-KR')}
+                            </p>
+                          )}
                         </div>
                         <a href={deployResult.site_url} target="_blank" rel="noopener noreferrer"
                           className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 whitespace-nowrap">
