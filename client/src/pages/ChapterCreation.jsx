@@ -9,15 +9,47 @@ import ModelSelector from '../components/ModelSelector';
 
 const TABS = ['💬 대화형 모드', '🤖 배치 자동화', '✏️ 챕터 편집'];
 
+// 이미지 라이트박스 모달
+function ImageLightbox({ src, alt, onClose }) {
+  if (!src) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer"
+      onClick={onClose}
+    >
+      <div className="relative max-w-5xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        <img src={src} alt={alt} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+        <p className="text-white/80 text-sm text-center mt-2 px-4">{alt}</p>
+        <button
+          onClick={onClose}
+          className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full text-gray-800 text-lg flex items-center justify-center shadow-lg hover:bg-gray-100"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 전역 라이트박스 상태를 위한 이벤트
+let _openLightbox = null;
+
 // 마크다운 이미지를 API 경로로 변환하는 커스텀 컴포넌트
 function makeMarkdownComponents(projectName) {
   return {
     img: ({ src, alt, ...props }) => {
-      // images/xxx.png → API 경로로 변환
       if (src && src.startsWith('images/')) {
         const token = getAuthToken();
         const apiSrc = `${API_BASE}/api/projects/${projectName}/chapters/images/${src.replace('images/', '')}${token ? '?token=' + token : ''}`;
-        return <img src={apiSrc} alt={alt} style={{ maxWidth: '100%', borderRadius: 8 }} {...props} />;
+        return (
+          <img
+            src={apiSrc} alt={alt}
+            style={{ maxWidth: '100%', borderRadius: 8, cursor: 'pointer' }}
+            onClick={() => _openLightbox?.({ src: apiSrc, alt })}
+            title="클릭하여 크게 보기"
+            {...props}
+          />
+        );
       }
       return <img src={src} alt={alt} {...props} />;
     },
@@ -27,6 +59,13 @@ function makeMarkdownComponents(projectName) {
 export default function ChapterCreation() {
   const { currentProject, refreshProgress } = useProjectStore();
   const [activeTab, setActiveTab] = useState(0);
+  const [lightboxImg, setLightboxImg] = useState(null);
+
+  // 전역 라이트박스 열기 함수 등록
+  useEffect(() => {
+    _openLightbox = setLightboxImg;
+    return () => { _openLightbox = null; };
+  }, []);
 
   if (!currentProject) {
     return (
@@ -38,6 +77,15 @@ export default function ChapterCreation() {
 
   return (
     <div className="h-full flex flex-col">
+      {/* 이미지 라이트박스 */}
+      {lightboxImg && (
+        <ImageLightbox
+          src={lightboxImg.src}
+          alt={lightboxImg.alt}
+          onClose={() => setLightboxImg(null)}
+        />
+      )}
+
       <div className="mb-4">
         <h2 className="text-2xl font-bold text-gray-900">✍️ Step 4: 챕터 제작</h2>
         <p className="text-sm text-gray-500">대화형으로 챕터를 작성하거나, 여러 챕터를 자동으로 생성하세요.</p>
@@ -1484,6 +1532,7 @@ function EditorTab({ project }) {
   }
 
   const [regenerating, setRegenerating] = useState(null);
+  const [imgCacheBust, setImgCacheBust] = useState(0); // 이미지 캐시 무효화
   const handleRegenerate = async (filename, currentAlt) => {
     const newPrompt = prompt('새 이미지 설명을 입력하세요:', currentAlt);
     if (!newPrompt) return;
@@ -1493,12 +1542,19 @@ function EditorTab({ project }) {
         method: 'POST',
         body: JSON.stringify({ imageName: filename, newPrompt }),
       });
-      // 마크다운에서 alt 텍스트도 업데이트
-      setContent(prev => prev.replace(
+      // 마크다운에서 alt 텍스트를 새 프롬프트로 업데이트
+      const updatedContent = content.replace(
         `![${currentAlt}](images/${filename})`,
         `![${newPrompt}](images/${filename})`
-      ));
-      setSavedContent(''); // 변경 표시
+      );
+      setContent(updatedContent);
+      // 자동 저장
+      await apiFetch(`/api/projects/${project.name}/chapters/${selectedId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content: updatedContent }),
+      });
+      setSavedContent(updatedContent);
+      setImgCacheBust(Date.now()); // 이미지 캐시 무효화
     } catch (err) {
       alert(`재생성 실패: ${err.message}`);
     } finally {
@@ -1611,13 +1667,24 @@ function EditorTab({ project }) {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {generatedImages.map((img, idx) => {
                   const token = getAuthToken();
-                  const imgSrc = `${API_BASE}/api/projects/${project.name}/chapters/images/${img.filename}${token ? '?token=' + token : ''}`;
+                  const imgSrc = `${API_BASE}/api/projects/${project.name}/chapters/images/${img.filename}${token ? '?token=' + token : ''}${imgCacheBust ? '&_t=' + imgCacheBust : ''}`;
                   return (
                     <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200">
-                      <img src={imgSrc} alt={img.alt} className="w-full h-24 object-cover" />
+                      <img
+                        src={imgSrc} alt={img.alt}
+                        className="w-full h-24 object-cover cursor-pointer"
+                        onClick={() => _openLightbox?.({ src: imgSrc, alt: img.alt })}
+                        title="클릭하여 크게 보기"
+                      />
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
                         <button
-                          onClick={() => handleRegenerate(img.filename, img.alt)}
+                          onClick={(e) => { e.stopPropagation(); _openLightbox?.({ src: imgSrc, alt: img.alt }); }}
+                          className="px-2 py-1 text-xs bg-white text-gray-800 rounded hover:bg-gray-100"
+                        >
+                          🔍 크게
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRegenerate(img.filename, img.alt); }}
                           disabled={regenerating === img.filename}
                           className="px-2 py-1 text-xs bg-white text-gray-800 rounded hover:bg-gray-100 disabled:opacity-50"
                         >
