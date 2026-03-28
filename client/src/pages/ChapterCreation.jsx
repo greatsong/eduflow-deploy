@@ -1475,6 +1475,37 @@ function EditorTab({ project }) {
   const hasChanges = content !== savedContent;
   const imagePrompts = parseImagePrompts(content);
 
+  // 생성된 이미지 파싱: ![alt](images/filename.png)
+  const generatedImages = [];
+  const imgRegex = /!\[([^\]]*)\]\(images\/([^)]+)\)/g;
+  let imgMatch;
+  while ((imgMatch = imgRegex.exec(content)) !== null) {
+    generatedImages.push({ alt: imgMatch[1], filename: imgMatch[2] });
+  }
+
+  const [regenerating, setRegenerating] = useState(null);
+  const handleRegenerate = async (filename, currentAlt) => {
+    const newPrompt = prompt('새 이미지 설명을 입력하세요:', currentAlt);
+    if (!newPrompt) return;
+    setRegenerating(filename);
+    try {
+      await apiFetch(`/api/projects/${project.name}/chapters/${selectedId}/regenerate-image`, {
+        method: 'POST',
+        body: JSON.stringify({ imageName: filename, newPrompt }),
+      });
+      // 마크다운에서 alt 텍스트도 업데이트
+      setContent(prev => prev.replace(
+        `![${currentAlt}](images/${filename})`,
+        `![${newPrompt}](images/${filename})`
+      ));
+      setSavedContent(''); // 변경 표시
+    } catch (err) {
+      alert(`재생성 실패: ${err.message}`);
+    } finally {
+      setRegenerating(null);
+    }
+  };
+
   // 이미지 프롬프트 적용 (채팅에서 개선된 프롬프트로 교체)
   const handleApplyPrompt = (newDesc) => {
     if (!chatPrompt) return;
@@ -1549,7 +1580,7 @@ function EditorTab({ project }) {
           {showPreview ? (
             <div className="h-full overflow-y-auto p-6">
               <div className="prose prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={makeMarkdownComponents(projectId)}>{content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={makeMarkdownComponents(project.name)}>{content}</ReactMarkdown>
               </div>
             </div>
           ) : (
@@ -1571,6 +1602,36 @@ function EditorTab({ project }) {
             <span className="text-purple-500">🖼️ 이미지 {imagePrompts.length}개</span>
           )}
         </div>
+
+        {/* 생성된 이미지 갤러리 */}
+        {generatedImages.length > 0 && (
+          <div className="border-t border-gray-200 max-h-56 overflow-y-auto">
+            <div className="p-3">
+              <h4 className="text-xs font-semibold text-gray-700 mb-2">🖼️ 생성된 이미지 ({generatedImages.length}장)</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {generatedImages.map((img, idx) => {
+                  const token = getAuthToken();
+                  const imgSrc = `${API_BASE}/api/projects/${project.name}/chapters/images/${img.filename}${token ? '?token=' + token : ''}`;
+                  return (
+                    <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200">
+                      <img src={imgSrc} alt={img.alt} className="w-full h-24 object-cover" />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleRegenerate(img.filename, img.alt)}
+                          disabled={regenerating === img.filename}
+                          className="px-2 py-1 text-xs bg-white text-gray-800 rounded hover:bg-gray-100 disabled:opacity-50"
+                        >
+                          {regenerating === img.filename ? '생성중...' : '재생성'}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-gray-500 p-1 truncate">{img.alt}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 이미지 프롬프트 검토 섹션 */}
         {imagePrompts.length > 0 && showImageReview && (

@@ -365,4 +365,27 @@ ${imagePrompt}
   res.end();
 }));
 
+// POST /api/projects/:id/chapters/:chapterId/regenerate-image - 이미지 재생성
+router.post('/:chapterId/regenerate-image', requireApiKey, asyncHandler(async (req, res) => {
+  const { imageName, newPrompt } = req.body;
+  if (!imageName || !newPrompt) {
+    return res.status(400).json({ message: 'imageName과 newPrompt가 필요합니다' });
+  }
+
+  const googleApiKey = resolveApiKey('google', req.apiKeys);
+  if (!googleApiKey) {
+    return res.status(400).json({ message: 'Google API 키가 필요합니다' });
+  }
+
+  try {
+    const { ImageGenerator } = await import('../services/imageGenerator.js');
+    const imgGen = new ImageGenerator(googleApiKey);
+    const docsPath = join(projectPath(req.params.id), 'docs');
+    const result = await imgGen.generateSingle(newPrompt, imageName, docsPath);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(500).json({ message: `이미지 생성 실패: ${e.message}` });
+  }
+}));
+
 export default router;

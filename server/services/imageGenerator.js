@@ -156,4 +156,29 @@ export class ImageGenerator {
 
     return result;
   }
+
+  /**
+   * 단일 이미지 재생성 (기존 파일 덮어쓰기)
+   * @param {string} description - 새 이미지 설명
+   * @param {string} filename - 저장할 파일명 (예: chapter01_img1.png)
+   * @param {string} docsPath - docs 디렉토리 경로
+   * @returns {{ success: boolean, filename?: string, size?: number, error?: string }}
+   */
+  async generateSingle(description, filename, docsPath) {
+    const imagesDir = join(docsPath, 'images');
+    if (!existsSync(imagesDir)) {
+      await mkdir(imagesDir, { recursive: true });
+    }
+
+    const imgResult = await this.generateImage(description);
+    if (!imgResult.success) {
+      return { success: false, error: imgResult.error };
+    }
+
+    const buffer = Buffer.from(imgResult.imageData, 'base64');
+    const imgPath = join(imagesDir, filename);
+    await writeFile(imgPath, buffer);
+
+    return { success: true, filename, size: buffer.length };
+  }
 }
