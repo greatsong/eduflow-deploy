@@ -3,7 +3,73 @@ import { Link } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { apiFetch, getApiKey } from '../api/client';
 
+const RELEASE_NOTES = [
+  {
+    version: 'v0.4.0',
+    date: '2026-03-28',
+    highlights: '2축 템플릿 · AI 이미지 · 평가 단계 · 대화 저장',
+    sections: [
+      {
+        title: '2축 템플릿 시스템',
+        icon: '🎯',
+        items: [
+          '교과 영역(WHAT) 7종 × 교육 모델(HOW) 6종 조합',
+          '기능 옵션 7종 자유 선택 (코드, 수식, Mermaid, 이미지 등)',
+          '교과별 최적화 프롬프트 자동 적용',
+        ],
+      },
+      {
+        title: 'AI 이미지 생성',
+        icon: '🖼️',
+        items: [
+          'Gemini API로 교육용 일러스트 자동 생성',
+          '이미지 갤러리 + 라이트박스 + 재생성',
+          '이미지 컨셉 가이드로 스타일 통일',
+        ],
+      },
+      {
+        title: '평가 단계 옵션 (0~4)',
+        icon: '📊',
+        items: [
+          '0: 평가 없음 → 4: 인터랙티브 채점+피드백+재도전',
+          '퀴즈 엔진(quiz-engine.js) 자동 포함',
+          '프로젝트별 평가 수준 설정',
+        ],
+      },
+      {
+        title: '대화 기록 서버 저장',
+        icon: '💬',
+        items: [
+          '챕터별 대화가 서버에 자동 저장',
+          '탭/브라우저 전환 후에도 유지',
+        ],
+      },
+      {
+        title: 'MkDocs 교재 개선',
+        icon: '📖',
+        items: [
+          '사이드바 접기 토글 (상태 기억)',
+          '이전/다음 챕터 카드형 네비게이션',
+          '발행인·검토자·발행일 메타데이터',
+        ],
+      },
+      {
+        title: '분량 제어 · 안정성',
+        icon: '🔧',
+        items: [
+          'TOC 과다 생성 방지 (6차시→20차시 현상 차단)',
+          '챕터 잘림 방지 안전 버퍼',
+          '권(Volume) → Part+Chapter 구조 통일',
+          '프로젝트 설정 저장 안정성 개선',
+        ],
+      },
+    ],
+  },
+];
+
 export default function Home() {
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+
   return (
     <div className="max-w-5xl mx-auto py-8 px-4">
       {/* 히어로 섹션 */}
@@ -14,10 +80,13 @@ export default function Home() {
 
         <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
           <div className="flex-1 text-center md:text-left">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 backdrop-blur rounded-full text-xs font-medium mb-5 border border-white/20">
+            <button
+              onClick={() => setShowReleaseNotes(true)}
+              className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 backdrop-blur rounded-full text-xs font-medium mb-5 border border-white/20 hover:bg-white/25 transition-colors cursor-pointer"
+            >
               <span className="w-2 h-2 bg-emerald-300 rounded-full animate-pulse" />
               v0.4 — 2축 템플릿 · 멀티 AI · 오픈소스
-            </div>
+            </button>
             <h1 className="text-4xl md:text-5xl font-extrabold leading-tight mb-4 tracking-tight">
               에듀플로
               <span className="block text-emerald-200 text-2xl md:text-3xl font-semibold mt-1">
@@ -355,6 +424,63 @@ function DeveloperLetter() {
           </p>
         </div>
       </div>
+
+      {/* 릴리즈 노트 모달 */}
+      {showReleaseNotes && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowReleaseNotes(false)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold">🎉 새로운 소식</h2>
+                  <p className="text-emerald-100 text-xs mt-0.5">{RELEASE_NOTES[0].version} · {RELEASE_NOTES[0].date}</p>
+                </div>
+                <button
+                  onClick={() => setShowReleaseNotes(false)}
+                  className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-sm transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* 본문 */}
+            <div className="overflow-y-auto max-h-[60vh] px-6 py-4 space-y-4">
+              {RELEASE_NOTES[0].sections.map((section, idx) => (
+                <div key={idx}>
+                  <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2 mb-2">
+                    <span className="text-base">{section.icon}</span>
+                    {section.title}
+                  </h3>
+                  <ul className="space-y-1 ml-7">
+                    {section.items.map((item, i) => (
+                      <li key={i} className="text-xs text-gray-600 leading-relaxed flex items-start gap-1.5">
+                        <span className="text-emerald-400 mt-0.5 shrink-0">•</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
+            {/* 푸터 */}
+            <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 text-center">
+              <button
+                onClick={() => setShowReleaseNotes(false)}
+                className="px-6 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
