@@ -582,6 +582,11 @@ function ReferencesTab({ projectId }) {
   const [files, setFiles] = useState([]);
   const [totalSize, setTotalSize] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteTitle, setPasteTitle] = useState('');
+  const [pasteContent, setPasteContent] = useState('');
+  const [pasteFormat, setPasteFormat] = useState('text');
+  const [pasteSaving, setPasteSaving] = useState(false);
 
   const loadFiles = async () => {
     if (!projectId) return;
@@ -619,6 +624,22 @@ function ReferencesTab({ projectId }) {
     e.target.value = '';
   };
 
+  const handlePaste = async () => {
+    if (!pasteTitle.trim() || !pasteContent.trim()) return;
+    setPasteSaving(true);
+    try {
+      await apiFetch(`/api/projects/${projectId}/references/paste`, {
+        method: 'POST',
+        body: JSON.stringify({ title: pasteTitle.trim(), content: pasteContent, format: pasteFormat }),
+      });
+      setPasteTitle('');
+      setPasteContent('');
+      setShowPaste(false);
+      await loadFiles();
+    } catch { }
+    setPasteSaving(false);
+  };
+
   const handleDelete = async (filename) => {
     try {
       await apiFetch(`/api/projects/${projectId}/references/${filename}`, { method: 'DELETE' });
@@ -626,25 +647,95 @@ function ReferencesTab({ projectId }) {
     } catch { }
   };
 
+  const formatIcon = (f) => {
+    const icons = { pdf: '📕', docx: '📘', xlsx: '📊', xls: '📊', html: '🌐', htm: '🌐', hwp: '📝', hwpx: '📝', md: '📄', txt: '📄', csv: '📋', json: '📋' };
+    return icons[f.format] || '📄';
+  };
+
   return (
     <div>
-      <h3 className="text-lg font-semibold mb-4">📚 참고자료 관리</h3>
+      <h3 className="text-lg font-semibold mb-4">참고자료 관리</h3>
 
-      {/* 업로드 */}
-      <div className="mb-6">
-        <label className="block mb-2">
+      {/* 안내 */}
+      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+        <p className="font-medium mb-1">교과서, 교육과정 문서, 수업 자료 등을 올리면 AI가 교재 생성 시 참고합니다.</p>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs">
+          {['PDF', 'DOCX', 'XLSX', 'HTML', 'HWP', 'HWPX', 'TXT', 'MD', 'CSV', 'JSON'].map(fmt => (
+            <span key={fmt} className="text-blue-600">{fmt} ✓</span>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-blue-500">파일당 최대 50MB · 최대 20개</p>
+      </div>
+
+      {/* 파일 업로드 */}
+      <div className="mb-4">
+        <label className="block">
           <span className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-emerald-700">
-            {uploading ? '업로드 중...' : '📤 파일 선택 및 업로드'}
+            {uploading ? '업로드 중...' : '📤 파일 업로드'}
           </span>
-          <input type="file" multiple accept=".md,.txt,.markdown,.docx,.pdf,.csv,.xlsx,.xls,.json"
+          <input type="file" multiple
+            accept=".md,.txt,.markdown,.docx,.pdf,.csv,.xlsx,.xls,.json,.html,.htm,.hwp,.hwpx"
             onChange={handleUpload} className="hidden" />
         </label>
+      </div>
+
+      {/* 텍스트 복붙 */}
+      <div className="mb-6">
+        <button
+          onClick={() => setShowPaste(!showPaste)}
+          className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
+        >
+          <span>{showPaste ? '▾' : '▸'}</span>
+          <span>텍스트 직접 입력 (복붙)</span>
+        </button>
+
+        {showPaste && (
+          <div className="mt-3 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <input
+              type="text"
+              value={pasteTitle}
+              onChange={(e) => setPasteTitle(e.target.value)}
+              placeholder="제목 (예: 교육과정 성취기준)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3"
+            />
+            <div className="flex gap-4 mb-3 text-sm">
+              {[
+                { value: 'text', label: '텍스트' },
+                { value: 'html', label: 'HTML' },
+                { value: 'markdown', label: '마크다운' },
+              ].map(opt => (
+                <label key={opt.value} className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="radio" name="pasteFormat" value={opt.value}
+                    checked={pasteFormat === opt.value}
+                    onChange={(e) => setPasteFormat(e.target.value)}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            <textarea
+              value={pasteContent}
+              onChange={(e) => setPasteContent(e.target.value)}
+              placeholder="웹에서 복사한 내용, HTML 코드, 교육과정 텍스트 등을 붙여넣으세요..."
+              rows={6}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+            />
+            <button
+              onClick={handlePaste}
+              disabled={pasteSaving || !pasteTitle.trim() || !pasteContent.trim()}
+              className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            >
+              {pasteSaving ? '저장 중...' : '참고자료로 저장'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 통계 */}
       <div className="flex gap-6 mb-4 text-sm text-gray-600">
         <span>파일 수: <strong>{files.length}</strong></span>
-        <span>전체 크기: <strong>{(totalSize / 1024).toFixed(1)} KB</strong></span>
+        <span>전체 크기: <strong>{totalSize >= 1048576 ? `${(totalSize / 1048576).toFixed(1)} MB` : `${(totalSize / 1024).toFixed(1)} KB`}</strong></span>
       </div>
 
       {/* 파일 목록 */}
@@ -654,12 +745,20 @@ function ReferencesTab({ projectId }) {
         <div className="space-y-2">
           {files.map((f) => (
             <div key={f.name} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
-              <div>
-                <span className="text-sm font-medium">📄 {f.name}</span>
-                <span className="ml-2 text-xs text-gray-400">{(f.size / 1024).toFixed(1)} KB</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base">{formatIcon(f)}</span>
+                <span className="text-sm font-medium truncate">{f.name}</span>
+                <span className="text-xs text-gray-400 whitespace-nowrap">
+                  {f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : `${(f.size / 1024).toFixed(1)} KB`}
+                </span>
+                {f.parseable ? (
+                  <span className="text-xs text-emerald-600 whitespace-nowrap" title="AI가 이 파일의 내용을 참고합니다">✅</span>
+                ) : (
+                  <span className="text-xs text-amber-500 whitespace-nowrap" title="이 형식은 텍스트 추출이 불가능합니다">⚠️</span>
+                )}
               </div>
               <button onClick={() => handleDelete(f.name)}
-                className="text-xs text-red-500 hover:text-red-700">삭제</button>
+                className="text-xs text-red-500 hover:text-red-700 ml-2 whitespace-nowrap">삭제</button>
             </div>
           ))}
         </div>

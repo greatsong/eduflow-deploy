@@ -209,6 +209,23 @@ export class ChapterGenerator {
     this.projectConfig = await this._loadJson(join(this.projectPath, 'config.json'));
     this.templateInfo = await this._loadJson(join(this.projectPath, 'template-info.json'));
     this._modelPricing = await this._loadModelPricing();
+
+    // v2: TemplateComposer로 조합 데이터 미리 로드
+    if (this.templateInfo.version === 2) {
+      try {
+        const { TemplateComposer } = await import('./templateManager.js');
+        const tc = new TemplateComposer();
+        this._v2Composed = await tc.compose(
+          this.templateInfo.what_id || '_default',
+          this.templateInfo.how_id,
+          this.templateInfo.features || [],
+          this.templateInfo.context_answers || {},
+        );
+      } catch (e) {
+        console.error('v2 템플릿 조합 실패, v1 폴백:', e.message);
+        this._v2Composed = null;
+      }
+    }
   }
 
   async _loadJson(filePath) {
@@ -261,6 +278,16 @@ export class ChapterGenerator {
   }
 
   _getPromptConfig() {
+    // v2: TemplateComposer에서 조합된 페르소나 사용
+    if (this.templateInfo.version === 2 && this._v2Composed) {
+      const pc = { ...this._v2Composed.persona };
+      if (this.projectConfig.target_audience) {
+        pc.audience = this.projectConfig.target_audience;
+      }
+      return pc;
+    }
+
+    // v1: 기존 TEMPLATE_PROMPTS 사용
     const templateId = this.templateInfo.template_id || '';
     const config = { ...(TEMPLATE_PROMPTS[templateId] || DEFAULT_PROMPT) };
 
@@ -307,14 +334,29 @@ export class ChapterGenerator {
   }
 
   _calcMaxTokensForTime(timeMinutes, userMaxTokens) {
-    // 한국어 기준: 출력 토큰 1개 ≈ 1자
-    // charMax(글자 제한)에 기반하여 max_tokens를 물리적으로 제한
-    // → AI가 프롬프트의 글자 제한을 무시해도 토큰 한도에서 잘림
+    // ============================================================
+    // 분량 제어 핵심 원칙: "잘리지 않는 것이 최우선"
+    //
+    // 1. 프롬프트에서 분량 가이드(charMin~safeCharMax)로 AI에게 적정 분량을 요청
+    // 2. max_tokens는 AI가 가이드를 약간 초과해도 잘리지 않도록 충분한 여유를 둠
+    // 3. AI가 프롬프트 가이드를 잘 따르면 charMax 이내에서 자연스럽게 끝남
+    // 4. 만약 AI가 가이드를 무시하고 길게 써도 max_tokens 한도 내에서 마무리됨
+    // ============================================================
+    const MODEL_TOKEN_LIMIT = 32000; // Opus/Sonnet API 한계보다 약간 아래
     const effectiveMinutes = timeMinutes > 0 ? timeMinutes : 50;
-    const charMax = effectiveMinutes * 100; // 프롬프트의 charMax와 동일
-    // 마크다운 서식/코드블록 등의 오버헤드를 감안해 15% 버퍼
-    const timeCap = Math.max(4000, Math.round(charMax * 1.15));
-    return Math.min(userMaxTokens, timeCap);
+
+    // 프롬프트의 charMax (AI에게 요청하는 최대 글자 수)
+    const charMax = effectiveMinutes * 100;
+
+    // max_tokens는 charMax의 2배로 설정 — 충분한 여유
+    // → AI가 가이드를 따르면 charMax 이내에서 끝남 (잘림 없음)
+    // → AI가 가이드를 초과해도 2배까지는 잘리지 않음
+    // → 실제 잘림은 MODEL_TOKEN_LIMIT에서만 발생
+    const timeCap = Math.max(6000, Math.round(charMax * 2.0));
+
+    // userMaxTokens가 0이면 시간 기반 자동 계산만 사용
+    const effectiveUserMax = userMaxTokens > 0 ? userMaxTokens : MODEL_TOKEN_LIMIT;
+    return Math.min(effectiveUserMax, timeCap, MODEL_TOKEN_LIMIT);
   }
 
   // ============================================================
@@ -527,14 +569,23 @@ export class ChapterGenerator {
 
   async _loadReferences() {
     if (!existsSync(this.referencesPath)) return [];
-    const files = await readdir(this.referencesPath);
+
+    // ReferenceManager를 사용하여 모든 포맷(PDF, DOCX, XLSX, HTML, HWP 등) 처리
+    const { ReferenceManager } = await import('./referenceManager.js');
+    const rm = new ReferenceManager(this.projectPath);
+    const files = await rm.listFiles();
     const refs = [];
+
     for (const file of files) {
-      if (/\.(md|txt|markdown)$/.test(file)) {
-        try {
-          const content = await readFile(join(this.referencesPath, file), 'utf-8');
-          refs.push(`[${file}]\n${content}`);
-        } catch { /* skip */ }
+      try {
+        const result = await rm.readFileContent(file.name);
+        if (result.status === 'ok' && result.content) {
+          refs.push(`[${file.name}]\n${result.content}`);
+        } else if (result.status === 'parse_error') {
+          console.warn(`참고자료 파싱 실패 (${file.name}): ${result.error || '알 수 없는 오류'}`);
+        }
+      } catch (e) {
+        console.warn(`참고자료 로드 실패 (${file.name}):`, e.message);
       }
     }
     return refs;
@@ -646,10 +697,9 @@ export class ChapterGenerator {
       if (totalChapters > 0 && currentNum > 0) {
         courseInfo = `\n**전체 과정**: 총 ${totalChapters}차시 중 ${currentNum}차시\n- 각 차시는 ${effectiveTimeLabel} 분량입니다\n`;
       }
-      // 한국어: 출력 토큰 1개 ≈ 1자 (영어의 1.5~4와 다름)
-      const tokenCharLimit = maxTokens; // 1:1 비율
-      const charMin = Math.min(effectiveMinutes * 60, tokenCharLimit);
-      const charMax = Math.min(effectiveMinutes * 100, tokenCharLimit);
+      // 분량 계산: 프롬프트 가이드용 (실제 max_tokens는 이보다 훨씬 넉넉하게 설정됨)
+      const charMin = effectiveMinutes * 60;
+      const charMax = effectiveMinutes * 100;
       const safeCharMax = Math.round(charMax * 0.9); // 90% 지점에서 마무리 유도
       const conceptCount = Math.max(1, Math.min(4, Math.floor(effectiveMinutes / 20)));
       const stepCount = Math.max(2, Math.min(6, Math.floor(effectiveMinutes / 10)));
@@ -660,18 +710,16 @@ export class ChapterGenerator {
 ${courseInfo}
 
 ## 분량 가이드 (${effectiveTimeLabel} 기준)
-- 전체 글자 수: 약 ${charMin.toLocaleString()}~${safeCharMax.toLocaleString()}자 (이 범위를 반드시 지키세요!)
+- **목표 글자 수: 약 ${charMin.toLocaleString()}~${safeCharMax.toLocaleString()}자**
 - 핵심 개념: ${conceptCount}개에 집중
 - 따라하기 실습: ${stepCount}단계 이내
 - 예시/예제: 핵심만 포함, 부가 설명 최소화
 
-## 절대 금지 (⚠️ 이 제한을 초과하면 응답이 중간에 잘립니다!)
-- **${charMax.toLocaleString()}자 절대 초과 금지** — ${safeCharMax.toLocaleString()}자 이내로 마무리하세요
-- **출력 토큰 ${maxTokens.toLocaleString()} 이내** (한국어 1토큰 ≈ 1자입니다. 이 한도 초과 시 응답이 잘립니다!)
-- 하나의 차시에 너무 많은 개념을 담지 마세요
+## ⚠️ 분량 안내
 - 이것은 ${effectiveTimeLabel} 수업 **한 차시** 분량입니다 (전체 교재가 아님!)
-- 내용이 길어질 것 같으면 핵심만 남기고 과감히 줄이세요
-- 반드시 문장을 완성한 뒤 마무리 섹션으로 끝내세요
+- **내용은 충실하게** 작성하되, ${safeCharMax.toLocaleString()}자 부근을 목표로 하세요
+- 핵심 개념을 깊이 있게 다루면서도, 한 차시에 맞는 범위를 유지하세요
+- **반드시 마무리 섹션(성찰/정리)까지 포함하여 완결된 형태로 끝내세요**
 `;
     }
 
@@ -707,8 +755,8 @@ ${courseInfo}
 `;
     }
 
-    // === JSON 기반 프롬프트 빌더 ===
-    // 변수 맵 구성
+    // === JSON 기반 프롬프트 빌더 (v1 레거시 + v2 3축 조합) ===
+    // 변수 맵 구성 (v2 슬롯 포함)
     const vars = {
       effectiveTimeLabel,
       effectiveMinutes: String(effectiveMinutes),
@@ -872,7 +920,7 @@ ${courseInfo}
   /**
    * 단일 챕터 생성 (rate limit 자동 재시도 포함)
    */
-  async generateChapter(chapterId, chapterTitle, partContext = '', model = 'claude-opus-4-6', maxTokens = 8000, progressCallback = null, estimatedTime = '', totalChapters = 0, currentNum = 0, tokenBudget = null) {
+  async generateChapter(chapterId, chapterTitle, partContext = '', model = 'claude-opus-4-6', maxTokens = 0, progressCallback = null, estimatedTime = '', totalChapters = 0, currentNum = 0, tokenBudget = null) {
     const timeMinutes = this._parseTimeMinutes(estimatedTime);
     const effectiveMaxTokens = this._calcMaxTokensForTime(timeMinutes, maxTokens);
 
@@ -1088,7 +1136,7 @@ ${courseInfo}
    * @param {boolean} skipCompleted - 완료된 챕터 건너뛰기
    * @param {number} tpmLimit - 분당 토큰 제한 (0이면 비활성화)
    */
-  async generateAllChapters(tocData, model = 'claude-opus-4-6', maxTokens = 8000, concurrent = 1, progressCallback = null, skipCompleted = true, tpmLimit = 0, chapterIds = null) {
+  async generateAllChapters(tocData, model = 'claude-opus-4-6', maxTokens = 0, concurrent = 1, progressCallback = null, skipCompleted = true, tpmLimit = 0, chapterIds = null) {
     const startTime = Date.now();
 
     // 출력 TPM 예산 관리자 생성 (tpmLimit > 0인 경우에만)

@@ -27,10 +27,17 @@ export class TOCGenerator {
     const tm = new TemplateManager();
     const templateAddition = await tm.getTocPromptAddition(this.projectPath);
 
+    // 방향성 논의에서 차시/주차 수 힌트 추출
+    const sessionMatch = directionSummary.match(/(\d+)\s*(?:차시|주차|회차|강|lesson|session|chapter)/i);
+    const requestedSessions = sessionMatch ? parseInt(sessionMatch[1], 10) : 0;
+    const sessionGuide = requestedSessions > 0
+      ? `\n⚠️ **차시 수 엄수**: 사용자가 **${requestedSessions}차시**를 요청했습니다. 반드시 정확히 ${requestedSessions}개의 Chapter만 생성하세요. 절대로 이 수를 초과하지 마세요!\n`
+      : '';
+
     const prompt = `당신은 교육 커리큘럼 설계 전문가입니다.
 
 다음 정보를 바탕으로 교육자료의 목차를 작성해주세요.
-
+${sessionGuide}
 # 방향성 논의 요약
 ${directionSummary}
 
@@ -38,8 +45,8 @@ ${directionSummary}
 ${referencesText}
 
 # 요구사항
-1. 고등학생 눈높이에 맞는 체계적인 커리큘럼
-2. 각 Part는 3-8개의 Chapter로 구성
+1. 대상 독자 눈높이에 맞는 체계적인 커리큘럼
+2. 각 Part는 3-8개의 Chapter로 구성${requestedSessions > 0 ? `\n   ⚠️ 전체 Chapter 수는 반드시 ${requestedSessions}개여야 합니다!` : ''}
 3. 각 Chapter는 명확한 학습 목표 3개와 간결한 개요 포함 (개요는 1-2문단만)
 4. 실습 위주, 점진적 난이도 상승
 
@@ -150,6 +157,25 @@ ${templateAddition}
     tocData.model = model;
     // 토큰 정보 첨부 (toc 저장 시에는 제외됨, 라우트에서 사용)
     tocData._tokenInfo = { inputTokens, outputTokens, provider, model };
+
+    // 차시 수 검증: 요청된 차시 수와 생성된 차시 수 비교
+    const totalGenerated = (tocData.parts || []).reduce((sum, p) => sum + (p.chapters || []).length, 0);
+    if (requestedSessions > 0 && totalGenerated > requestedSessions * 1.5) {
+      console.warn(`⚠️ TOC 과다 생성 감지: 요청 ${requestedSessions}차시, 생성 ${totalGenerated}차시 → 초과분 제거`);
+      // 요청 차시 수에 맞게 트리밍
+      let kept = 0;
+      for (const part of tocData.parts) {
+        if (kept >= requestedSessions) {
+          part.chapters = [];
+        } else if (kept + part.chapters.length > requestedSessions) {
+          part.chapters = part.chapters.slice(0, requestedSessions - kept);
+        }
+        kept += part.chapters.length;
+      }
+      // 빈 Part 제거
+      tocData.parts = tocData.parts.filter(p => p.chapters && p.chapters.length > 0);
+      tocData._trimmed = { requested: requestedSessions, original: totalGenerated };
+    }
 
     return tocData;
   }

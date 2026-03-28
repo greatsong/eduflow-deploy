@@ -29,7 +29,7 @@ export const GENERATION_STATUS = {
   COMPLETED: 'completed',
 };
 
-// 지원 템플릿 목록
+// 지원 템플릿 목록 (v1 레거시 호환)
 export const TEMPLATE_IDS = [
   'programming-course',
   'school-textbook',
@@ -38,6 +38,12 @@ export const TEMPLATE_IDS = [
   'self-directed-learning',
   'teacher-guide-4c',
 ];
+
+// 템플릿 시스템 버전 (v2: 3축 구조)
+export const TEMPLATE_VERSION = {
+  LEGACY: 1,
+  TWO_AXIS: 2,
+};
 
 // SSE 이벤트 타입
 export const SSE_EVENTS = {

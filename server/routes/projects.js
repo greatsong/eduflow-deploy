@@ -6,10 +6,10 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { ProgressManager } from '../services/progressManager.js';
-import { TemplateManager } from '../services/templateManager.js';
+import { TemplateManager, TemplateComposer } from '../services/templateManager.js';
 import { ReferenceManager } from '../services/referenceManager.js';
 import { sanitizeId } from '../middleware/sanitize.js';
-import { TIER_CONFIG } from '../../shared/constants.js';
+import { TIER_CONFIG, TEMPLATE_VERSION } from '../../shared/constants.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = process.env.PROJECTS_DIR || join(__dirname, '..', '..', 'projects');
@@ -155,7 +155,14 @@ router.post('/', asyncHandler(async (req, res) => {
   await writeFile(join(projPath, 'config.json'), JSON.stringify(config, null, 2), 'utf-8');
 
   // 템플릿 적용
-  if (template_id) {
+  const { what_id, how_id, features: featureIds, context_answers } = req.body;
+
+  if (what_id && how_id) {
+    // ── v2: 3축 조합 시스템 ──
+    const tc = new TemplateComposer();
+    await tc.applyV2(projPath, what_id, how_id, featureIds || [], context_answers || {});
+  } else if (template_id) {
+    // ── v1: 레거시 단일 템플릿 ──
     const tm = new TemplateManager();
     const success = await tm.applyTemplate(template_id, projPath, template_vars || {});
 
@@ -165,7 +172,6 @@ router.post('/', asyncHandler(async (req, res) => {
       if (existsSync(infoFile)) {
         const raw = await readFile(infoFile, 'utf-8');
         const info = JSON.parse(raw);
-        // 템플릿 기본값 대신 사용자 커스텀 프롬프트로 오버라이드
         if (custom_prompt_config.toc_prompt_addition !== undefined) {
           info.toc_prompt_addition = custom_prompt_config.toc_prompt_addition;
         }
@@ -190,6 +196,57 @@ router.get('/templates/list', asyncHandler(async (req, res) => {
   const tm = new TemplateManager();
   const templates = await tm.listTemplates();
   res.json(templates);
+}));
+
+// ── v2 3축 템플릿 API ──
+
+// GET /api/projects/templates/whats - 교과 전문성 목록
+router.get('/templates/whats', asyncHandler(async (req, res) => {
+  const tc = new TemplateComposer();
+  const whats = await tc.listWhats();
+  res.json(whats);
+}));
+
+// GET /api/projects/templates/hows - 교육 모델 목록
+router.get('/templates/hows', asyncHandler(async (req, res) => {
+  const tc = new TemplateComposer();
+  const hows = await tc.listHows();
+  res.json(hows);
+}));
+
+// GET /api/projects/templates/features - 기능 옵션 목록
+router.get('/templates/features', asyncHandler(async (req, res) => {
+  const tc = new TemplateComposer();
+  const features = await tc.listFeatures();
+  res.json(features);
+}));
+
+// POST /api/projects/templates/compose-preview - 조합 미리보기
+router.post('/templates/compose-preview', asyncHandler(async (req, res) => {
+  const { what_id, how_id, features } = req.body;
+  if (!how_id) return res.status(400).json({ message: 'how_id는 필수입니다' });
+  const tc = new TemplateComposer();
+  const composed = await tc.compose(what_id || '_default', how_id, features || []);
+  res.json({
+    persona: composed.persona,
+    templateName: composed.templateName,
+    compatibility: composed.compatibility,
+    tocAdditionPreview: composed.tocAddition.slice(0, 500),
+    chapterAdditionPreview: composed.chapterAddition.slice(0, 500),
+  });
+}));
+
+// GET /api/projects/templates/check-compatibility - 호환성 검사
+router.get('/templates/check-compatibility', asyncHandler(async (req, res) => {
+  const { what_id, how_id, features } = req.query;
+  if (!what_id || !how_id) return res.status(400).json({ message: 'what_id와 how_id는 필수입니다' });
+  const tc = new TemplateComposer();
+  const what = await tc.loadWhat(what_id);
+  const how = await tc.loadHow(how_id);
+  if (!what || !how) return res.status(404).json({ message: '템플릿을 찾을 수 없습니다' });
+  const featureList = features ? (typeof features === 'string' ? features.split(',') : features) : [];
+  const result = tc.checkCompatibility(what, how, featureList);
+  res.json(result);
 }));
 
 // GET /api/projects/templates/samples/:templateId - 템플릿 샘플 챕터 조회
@@ -337,6 +394,41 @@ router.post('/:id/references', upload.array('files', 20), asyncHandler(async (re
   res.status(201).json({ saved, count: saved.length });
 }));
 
+// POST /api/projects/:id/references/paste - 텍스트/HTML 복붙
+router.post('/:id/references/paste', asyncHandler(async (req, res) => {
+  const { title, content, format } = req.body;
+  if (!title || !content) {
+    return res.status(400).json({ message: '제목과 내용은 필수입니다' });
+  }
+
+  const rm = new ReferenceManager(projectPath(req.params.id));
+  const sanitizedTitle = title.replace(/[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ_\-\s]/g, '_').trim().slice(0, 100);
+
+  let finalContent = content;
+  let ext = '.md';
+
+  if (format === 'html') {
+    // HTML → Markdown 변환
+    try {
+      const TurndownService = (await import('turndown')).default;
+      const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+      finalContent = td.turndown(content);
+    } catch (e) {
+      // 변환 실패 시 원본 HTML에서 태그 제거
+      finalContent = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+  } else if (format === 'text') {
+    ext = '.txt';
+  }
+  // format === 'markdown' 또는 기본값: .md 그대로
+
+  const filename = `${sanitizedTitle}${ext}`;
+  const buffer = Buffer.from(finalContent, 'utf-8');
+  const path = await rm.saveFile(buffer, filename);
+
+  res.status(201).json({ saved: { name: filename, path }, message: '참고자료로 저장되었습니다' });
+}));
+
 // GET /api/projects/:id/references/search - 검색 (/:filename보다 먼저 등록)
 router.get('/:id/references/search', asyncHandler(async (req, res) => {
   const rm = new ReferenceManager(projectPath(req.params.id));
@@ -344,14 +436,18 @@ router.get('/:id/references/search', asyncHandler(async (req, res) => {
   res.json({ files });
 }));
 
-// GET /api/projects/:id/references/:filename - 내용 읽기
+// GET /api/projects/:id/references/:filename - 내용 읽기 (모든 포맷 지원)
 router.get('/:id/references/:filename', asyncHandler(async (req, res) => {
   const rm = new ReferenceManager(projectPath(req.params.id));
-  const content = await rm.readFile(req.params.filename);
-  if (content === null) {
-    return res.status(404).json({ message: '파일을 찾을 수 없거나 텍스트 파일이 아닙니다' });
+  const result = await rm.readFileContent(req.params.filename);
+
+  if (result.status === 'not_found') {
+    return res.status(404).json({ message: '파일을 찾을 수 없습니다' });
   }
-  res.json({ filename: req.params.filename, content });
+  if (result.status === 'parse_error' || result.status === 'unsupported') {
+    return res.json({ filename: req.params.filename, content: null, status: result.status, error: result.error });
+  }
+  res.json({ filename: req.params.filename, content: result.content, status: 'ok', format: result.format });
 }));
 
 // DELETE /api/projects/:id/references/:filename - 삭제
