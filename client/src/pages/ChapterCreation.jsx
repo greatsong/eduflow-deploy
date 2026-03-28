@@ -1734,12 +1734,42 @@ function EditorTab({ project }) {
                         <p className="text-gray-800 font-medium flex-1 truncate" title={ip.description}>
                           {idx + 1}. {ip.description}
                         </p>
-                        <button
-                          onClick={() => setChatPrompt(ip.description)}
-                          className="shrink-0 px-2 py-0.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200"
-                        >
-                          AI 개선
-                        </button>
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={async () => {
+                              const filename = `${selectedId}_img${idx + 1}.png`;
+                              setRegenerating(filename);
+                              try {
+                                await apiFetch(`/api/projects/${project.name}/chapters/${selectedId}/regenerate-image`, {
+                                  method: 'POST',
+                                  body: JSON.stringify({ imageName: filename, newPrompt: ip.description }),
+                                });
+                                // 플레이스홀더를 이미지 마크다운으로 교체
+                                const updated = content.replace(ip.full, `![${ip.description}](images/${filename})`);
+                                setContent(updated);
+                                await apiFetch(`/api/projects/${project.name}/chapters/${selectedId}`, {
+                                  method: 'PUT', body: JSON.stringify({ content: updated }),
+                                });
+                                setSavedContent(updated);
+                                setImgCacheBust(Date.now());
+                              } catch (err) {
+                                alert(`생성 실패: ${err.message}`);
+                              } finally {
+                                setRegenerating(null);
+                              }
+                            }}
+                            disabled={regenerating}
+                            className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 disabled:opacity-50"
+                          >
+                            {regenerating ? '생성중...' : '🖼️ 생성'}
+                          </button>
+                          <button
+                            onClick={() => setChatPrompt(ip.description)}
+                            className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200"
+                          >
+                            AI 개선
+                          </button>
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-2 mt-1">
                         {checks.map((c, ci) => (

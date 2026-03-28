@@ -165,16 +165,13 @@ export class ImageGenerator {
           result = result.replace(ph.fullMatch, `![${ph.description}](images/${filename})`);
           generated++;
         } else {
-          result = result.replace(ph.fullMatch,
-            `> **[이미지]** ${ph.description}\n> *(자동 생성 실패: ${imgResult.error})*`);
+          // 실패 시 플레이스홀더 유지 → 챕터 편집에서 재생성 가능
+          // (오류 메시지를 챕터 내용에 넣지 않음)
+          console.warn(`이미지 생성 실패 (${ph.description.slice(0, 40)}): ${imgResult.error}`);
         }
       } else {
-        // Promise rejected
-        const ph = placeholders[results.indexOf(r)];
-        if (ph) {
-          result = result.replace(ph.fullMatch,
-            `> **[이미지]** ${ph.description}\n> *(생성 중 오류 발생)*`);
-        }
+        // Promise rejected — 플레이스홀더 유지
+        console.warn(`이미지 생성 Promise 실패:`, r.reason?.message || r.reason);
       }
     }
 
