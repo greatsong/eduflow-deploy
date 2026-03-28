@@ -121,6 +121,22 @@ export default function ChapterCreation() {
 // =============================================
 // 탭 1: 대화형 모드
 // =============================================
+// 대화 기록 서버 저장 헬퍼
+async function saveChatToServer(projectName, chapterId, messages) {
+  if (!chapterId) return;
+  try {
+    await apiFetch(`/api/projects/${projectName}/chapters/chat-history`, {
+      method: 'PUT',
+      body: JSON.stringify({ chapterId, messages }),
+    });
+  } catch { /* fire-and-forget */ }
+}
+async function loadAllChatsFromServer(projectName) {
+  try {
+    return await apiFetch(`/api/projects/${projectName}/chapters/chat-history`);
+  } catch { return {}; }
+}
+
 function InteractiveTab({ project }) {
   const [chapters, setChapters] = useState([]);
   const [selectedChapter, setSelectedChapter] = useState(null);
@@ -142,9 +158,43 @@ function InteractiveTab({ project }) {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  const chatHistoryRef = useRef({}); // { chapterId: messages[] } 캐시
+  const saveTimerRef = useRef(null);
+
+  // 프로젝트 로드 시 서버에서 전체 대화 기록 로드
+  useEffect(() => {
+    if (!project) return;
+    loadAllChatsFromServer(project.name).then((history) => {
+      chatHistoryRef.current = history || {};
+    });
+  }, [project]);
+
+  // 대화 변경 시 서버에 디바운스 저장 (1초)
+  useEffect(() => {
+    if (!selectedChapter || isStreaming) return;
+    if (chatMessages.length > 0) {
+      chatHistoryRef.current[selectedChapter.chapter_id] = chatMessages;
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        saveChatToServer(project.name, selectedChapter.chapter_id, chatMessages);
+      }, 1000);
+    }
+    return () => clearTimeout(saveTimerRef.current);
+  }, [chatMessages, isStreaming, selectedChapter, project]);
+
   const handleSelectChapter = async (ch) => {
+    // 현재 챕터의 대화를 캐시에 저장
+    if (selectedChapter && chatMessages.length > 0) {
+      chatHistoryRef.current[selectedChapter.chapter_id] = chatMessages;
+      saveChatToServer(project.name, selectedChapter.chapter_id, chatMessages);
+    }
+
     setSelectedChapter(ch);
-    setChatMessages([]);
+
+    // 캐시에서 대화 복원
+    const savedMessages = chatHistoryRef.current[ch.chapter_id] || [];
+    setChatMessages(savedMessages);
+
     try {
       const data = await apiFetch(`/api/projects/${project.name}/chapters/${ch.chapter_id}`);
       setPreviewContent(data.content || '');
@@ -153,14 +203,13 @@ function InteractiveTab({ project }) {
     }
   };
 
-  // 탭 활성화 시 + 이미 선택된 챕터가 있으면 최신 내용 리로드
-  useEffect(() => {
-    if (selectedChapter && project) {
-      apiFetch(`/api/projects/${project.name}/chapters/${selectedChapter.chapter_id}`)
-        .then((data) => setPreviewContent(data.content || ''))
-        .catch(() => {});
+  const handleClearChat = () => {
+    if (selectedChapter) {
+      chatHistoryRef.current[selectedChapter.chapter_id] = [];
+      saveChatToServer(project.name, selectedChapter.chapter_id, []);
     }
-  }, [project]); // project 변경 시 (탭 전환 포함)
+    setChatMessages([]);
+  };
 
   const handleSend = useCallback(async (e) => {
     e.preventDefault();
@@ -288,7 +337,7 @@ function InteractiveTab({ project }) {
               <div className="p-3 border-b border-gray-100 flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700">💬 Claude와 대화</span>
                 <button
-                  onClick={() => setChatMessages([])}
+                  onClick={handleClearChat}
                   className="text-xs text-gray-400 hover:text-gray-600"
                 >
                   초기화

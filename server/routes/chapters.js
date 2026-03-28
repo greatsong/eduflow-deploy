@@ -102,6 +102,45 @@ router.get('/images/:filename', (req, res, next) => {
   res.sendFile(filePath);
 }));
 
+// GET /api/projects/:id/chapters/chat-history - 전체 대화 기록 로드
+router.get('/chat-history', asyncHandler(async (req, res) => {
+  const filePath = join(projectPath(req.params.id), 'chat_history.json');
+  if (!existsSync(filePath)) return res.json({});
+  try {
+    const { readFile: rf } = await import('fs/promises');
+    const data = JSON.parse(await rf(filePath, 'utf-8'));
+    res.json(data);
+  } catch {
+    res.json({});
+  }
+}));
+
+// PUT /api/projects/:id/chapters/chat-history - 대화 기록 저장
+router.put('/chat-history', asyncHandler(async (req, res) => {
+  const { chapterId, messages } = req.body;
+  if (!chapterId) return res.status(400).json({ message: 'chapterId 필요' });
+
+  const filePath = join(projectPath(req.params.id), 'chat_history.json');
+  let history = {};
+  if (existsSync(filePath)) {
+    try {
+      const { readFile: rf } = await import('fs/promises');
+      history = JSON.parse(await rf(filePath, 'utf-8'));
+    } catch { /* start fresh */ }
+  }
+
+  if (messages && messages.length > 0) {
+    // 최근 50개 메시지만 저장 (용량 관리)
+    history[chapterId] = messages.slice(-50);
+  } else {
+    delete history[chapterId];
+  }
+
+  const { writeFile: wf } = await import('fs/promises');
+  await wf(filePath, JSON.stringify(history, null, 2), 'utf-8');
+  res.json({ success: true });
+}));
+
 // GET /api/projects/:id/chapters/:chapterId - 챕터 내용 읽기
 router.get('/:chapterId', asyncHandler(async (req, res) => {
   const gen = new ChapterGenerator(projectPath(req.params.id));

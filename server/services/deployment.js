@@ -220,6 +220,7 @@ export class Deployment {
       { src: 'mkdocs-title-link.js', dest: 'title-link.js' },
       { src: 'mermaid-config.js', dest: 'mermaid-config.js' },
       { src: 'scroll-progress.js', dest: 'scroll-progress.js' },
+      { src: 'eduflow-nav.js', dest: 'eduflow-nav.js' },
     ];
 
     // 조건부 JS: quiz-engine.js — assessment_level 4일 때만 포함
@@ -380,6 +381,7 @@ extra_javascript:
   - javascripts/title-link.js
   - javascripts/mermaid-config.js
   - javascripts/scroll-progress.js
+  - javascripts/eduflow-nav.js
 ${needsCircuitDiagrams ? '  - javascripts/circuit-diagrams.js\n' : ''}${needsQuizEngine ? '  - javascripts/quiz-engine.js\n' : ''}
 extra_css:
   - stylesheets/custom.css
