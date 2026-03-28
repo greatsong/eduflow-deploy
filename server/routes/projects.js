@@ -69,7 +69,7 @@ router.get('/', asyncHandler(async (req, res) => {
 
 // POST /api/projects - 프로젝트 생성
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, title, author, description, claude_model, settings, template_id, template_vars, custom_prompt_config, include_hw_diagrams } = req.body;
+  const { name, title, author, description, claude_model, settings, template_id, template_vars, custom_prompt_config, include_hw_diagrams, image_generation_enabled } = req.body;
 
   if (!name || !title) {
     return res.status(400).json({ message: '프로젝트 ID와 제목은 필수입니다' });
@@ -141,6 +141,7 @@ router.post('/', asyncHandler(async (req, res) => {
       temperature: 1.0,
     },
     include_hw_diagrams: include_hw_diagrams || false,
+    image_generation_enabled: image_generation_enabled || false,
     deployment: {
       auto_commit: false,
       auto_deploy: false,
@@ -271,6 +272,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
   if (updates.claude_model !== undefined) config.claude_model = updates.claude_model;
   if (updates.settings) config.settings = { ...config.settings, ...updates.settings };
   if (updates.include_hw_diagrams !== undefined) config.include_hw_diagrams = updates.include_hw_diagrams;
+  if (updates.image_generation_enabled !== undefined) config.image_generation_enabled = updates.image_generation_enabled;
   config.updated_at = new Date().toISOString();
 
   await writeFile(configFile, JSON.stringify(config, null, 2), 'utf-8');

@@ -9,6 +9,9 @@ function getMimeType(filename) {
     '.txt': 'text/plain',
     '.markdown': 'text/markdown',
     '.json': 'application/json',
+    '.csv': 'text/csv',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.xls': 'application/vnd.ms-excel',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     '.pdf': 'application/pdf',
   };
@@ -74,7 +77,7 @@ export class ReferenceManager {
     const filePath = join(this.referencesPath, filename);
     if (!existsSync(filePath)) return null;
 
-    const textExts = ['.txt', '.md', '.markdown', '.text'];
+    const textExts = ['.txt', '.md', '.markdown', '.text', '.csv', '.json'];
     if (!textExts.includes(extname(filename).toLowerCase())) return null;
 
     try {

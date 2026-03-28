@@ -1082,3 +1082,330 @@ summary:focus-visible {
     opacity: 0.4;
   }
 }
+
+/* ============================================================
+   SVG 다이어그램 (인라인 SVG 시각 자료)
+   ============================================================ */
+.svg-diagram {
+  text-align: center;
+  margin: 1.5em 0;
+  overflow-x: auto;
+}
+
+.svg-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 다크모드 대응 */
+[data-md-color-scheme="slate"] .svg-diagram svg text {
+  fill: #e0e0e0;
+}
+
+[data-md-color-scheme="slate"] .svg-diagram svg rect,
+[data-md-color-scheme="slate"] .svg-diagram svg circle {
+  stroke: #e0e0e0;
+}
+
+[data-md-color-scheme="slate"] .svg-diagram svg line,
+[data-md-color-scheme="slate"] .svg-diagram svg path {
+  stroke: #b0b0b0;
+}
+
+[data-md-color-scheme="slate"] .svg-diagram svg marker path {
+  fill: #b0b0b0;
+}
+
+@media print {
+  .svg-diagram {
+    break-inside: avoid;
+  }
+}
+
+/* ============================================================
+   AI 리터러시 교재 컴포넌트 (Starlight 스타일 재현)
+   md_in_html 확장 기반: <div class="..." markdown> 패턴
+   ============================================================ */
+
+/* --- 수업 배너 (lesson-banner) --- */
+.lesson-banner {
+  background: linear-gradient(135deg, var(--ef-primary-light) 0%, var(--ef-primary-lighter) 100%);
+  border: 1px solid color-mix(in srgb, var(--ef-primary) 20%, transparent);
+  border-radius: var(--ef-radius);
+  padding: 1.5rem 2rem;
+  margin: 0 0 2rem 0;
+}
+
+.lesson-banner > p:first-child {
+  font-size: 0.92rem;
+  color: var(--ef-text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.lesson-banner > p:first-child strong {
+  color: var(--ef-primary-text);
+}
+
+.lesson-banner > blockquote {
+  background: var(--ef-card-bg) !important;
+  border-left: 4px solid var(--ef-accent) !important;
+  border-radius: 0 8px 8px 0 !important;
+  margin: 0.75rem 0 0 0 !important;
+  padding: 0.75rem 1rem !important;
+  box-shadow: var(--ef-shadow-sm);
+}
+
+.lesson-banner > blockquote::before {
+  display: none !important;
+}
+
+[data-md-color-scheme="slate"] .lesson-banner {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ef-primary) 15%, #1a1a2e) 0%, color-mix(in srgb, var(--ef-accent) 10%, #2a2a3e) 100%);
+  border-color: var(--ef-border);
+}
+
+/* --- 카드 그리드 (cards-grid + card) --- */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.card {
+  background: var(--ef-card-bg);
+  border: 1px solid var(--ef-border);
+  border-radius: var(--ef-radius);
+  padding: 1.25rem 1.5rem;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--ef-shadow-hover);
+  transform: translateY(-2px);
+}
+
+.card h3, .card h4 {
+  margin-top: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
+  font-size: 1.1rem !important;
+  line-height: 1.4 !important;
+}
+
+.card > p:last-child {
+  margin-bottom: 0;
+  color: var(--ef-text-muted);
+  font-size: 0.95rem;
+}
+
+/* 카드 색상 변형 — 상단 보더 */
+.card-orange { border-top: 3px solid #f59e0b; }
+.card-green  { border-top: 3px solid #10b981; }
+.card-blue   { border-top: 3px solid #3b82f6; }
+.card-red    { border-top: 3px solid #ef4444; }
+.card-purple { border-top: 3px solid #8b5cf6; }
+
+.card-orange h3, .card-orange h4 { color: #b45309 !important; }
+.card-green h3,  .card-green h4  { color: #047857 !important; }
+.card-blue h3,   .card-blue h4   { color: #1d4ed8 !important; }
+.card-red h3,    .card-red h4    { color: #b91c1c !important; }
+.card-purple h3, .card-purple h4 { color: #6d28d9 !important; }
+
+[data-md-color-scheme="slate"] .card-orange h3,
+[data-md-color-scheme="slate"] .card-orange h4 { color: #fbbf24 !important; }
+[data-md-color-scheme="slate"] .card-green h3,
+[data-md-color-scheme="slate"] .card-green h4  { color: #34d399 !important; }
+[data-md-color-scheme="slate"] .card-blue h3,
+[data-md-color-scheme="slate"] .card-blue h4   { color: #60a5fa !important; }
+[data-md-color-scheme="slate"] .card-red h3,
+[data-md-color-scheme="slate"] .card-red h4    { color: #f87171 !important; }
+[data-md-color-scheme="slate"] .card-purple h3,
+[data-md-color-scheme="slate"] .card-purple h4 { color: #a78bfa !important; }
+
+[data-md-color-scheme="slate"] .card {
+  background: var(--ef-card-bg);
+  border-color: var(--ef-border);
+}
+
+/* --- Steps 컴포넌트 (steps + step) --- */
+.steps {
+  margin: 1.5rem 0;
+  padding-left: 0;
+  counter-reset: step-counter;
+}
+
+.step {
+  position: relative;
+  padding-left: 3rem;
+  padding-bottom: 1.5rem;
+  border-left: 2px solid color-mix(in srgb, var(--ef-primary) 30%, transparent);
+  margin-left: 0.85rem;
+  counter-increment: step-counter;
+}
+
+.step:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+
+.step::before {
+  content: counter(step-counter);
+  position: absolute;
+  left: -0.85rem;
+  top: 0;
+  width: 1.7rem;
+  height: 1.7rem;
+  background: var(--ef-primary);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  z-index: 1;
+}
+
+.step h4 {
+  margin-top: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
+  font-size: 1.05rem !important;
+  color: var(--ef-primary-text) !important;
+}
+
+[data-md-color-scheme="slate"] .step {
+  border-left-color: color-mix(in srgb, var(--ef-primary) 25%, transparent);
+}
+
+[data-md-color-scheme="slate"] .step::before {
+  background: var(--ef-accent);
+}
+
+/* --- 링크 카드 (link-cards + link-card) --- */
+.link-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.link-card {
+  background: var(--ef-card-bg);
+  border: 1px solid var(--ef-border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.link-card:hover {
+  border-color: var(--ef-primary);
+  box-shadow: var(--ef-shadow-md);
+}
+
+.link-card h4 {
+  margin: 0 0 0.25rem 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
+  color: var(--ef-primary) !important;
+  font-size: 1rem !important;
+}
+
+.link-card > p:last-child {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ef-text-muted);
+  line-height: 1.5;
+}
+
+[data-md-color-scheme="slate"] .link-card {
+  background: var(--ef-card-bg);
+  border-color: var(--ef-border);
+}
+
+/* --- 평가 섹션 (assessment) --- */
+.assessment {
+  background: var(--ef-gray-50);
+  border: 1px solid var(--ef-border);
+  border-radius: var(--ef-radius);
+  padding: 1.5rem 2rem;
+  margin: 2rem 0;
+}
+
+.assessment h3 {
+  margin-top: 0 !important;
+  border: none !important;
+  background: none !important;
+  padding: 0 !important;
+  color: var(--ef-primary-text) !important;
+}
+
+.assessment details {
+  margin: 0.5rem 0 1.5rem 0;
+}
+
+.assessment details summary {
+  cursor: pointer;
+  color: var(--ef-primary);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+[data-md-color-scheme="slate"] .assessment {
+  background: color-mix(in srgb, var(--ef-card-bg) 80%, transparent);
+}
+
+/* --- AI 리터러시 컴포넌트 반응형 --- */
+@media (max-width: 768px) {
+  .lesson-banner {
+    padding: 1rem 1.25rem;
+  }
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .step {
+    padding-left: 2.5rem;
+  }
+  .link-cards {
+    grid-template-columns: 1fr;
+  }
+  .assessment {
+    padding: 1rem 1.25rem;
+  }
+}
+
+/* --- AI 리터러시 컴포넌트 인쇄 --- */
+@media print {
+  .lesson-banner {
+    background: #f5f3ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    break-inside: avoid;
+  }
+  .cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .card {
+    box-shadow: none;
+    border: 1px solid #d1d5db;
+  }
+  .card:hover {
+    transform: none;
+  }
+  .step::before {
+    background: #4f46e5 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .assessment {
+    background: #f9fafb !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    break-inside: avoid;
+  }
+}

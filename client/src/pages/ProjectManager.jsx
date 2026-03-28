@@ -188,6 +188,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [tocPrompt, setTocPrompt] = useState(draft?.tocPrompt || '');
   const [chapterPrompt, setChapterPrompt] = useState(draft?.chapterPrompt || '');
   const [includeHwDiagrams, setIncludeHwDiagrams] = useState(draft?.includeHwDiagrams || false);
+  const [imageGenerationEnabled, setImageGenerationEnabled] = useState(draft?.imageGenerationEnabled || false);
   const [showSampleModal, setShowSampleModal] = useState(false);
   const [sampleContent, setSampleContent] = useState('');
   const [sampleTitle, setSampleTitle] = useState('');
@@ -196,9 +197,9 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   // 새 프로젝트 폼 변경 시 자동 임시저장
   useEffect(() => {
     if (!project) {
-      saveDraft({ form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor, includeHwDiagrams });
+      saveDraft({ form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor, includeHwDiagrams, imageGenerationEnabled });
     }
-  }, [form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor, includeHwDiagrams, project]);
+  }, [form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor, includeHwDiagrams, imageGenerationEnabled, project]);
 
   // 템플릿 목록 로드
   useEffect(() => {
@@ -232,6 +233,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       setTocPrompt(templateInfo.toc_prompt_addition || '');
       setChapterPrompt(templateInfo.chapter_prompt_addition || '');
       setIncludeHwDiagrams(config.include_hw_diagrams || false);
+      setImageGenerationEnabled(config.image_generation_enabled || false);
       if (templateInfo.template_id) setShowPromptEditor(true);
     }).finally(() => setLoading(false));
   }, [project]);
@@ -264,6 +266,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
         ...form,
         template_id: selectedTemplate || undefined,
         include_hw_diagrams: includeHwDiagrams,
+        image_generation_enabled: imageGenerationEnabled,
         custom_prompt_config: selectedTemplate ? {
           toc_prompt_addition: tocPrompt,
           chapter_prompt_addition: chapterPrompt,
@@ -298,6 +301,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
           description: form.description,
           target_audience: form.target_audience,
           include_hw_diagrams: includeHwDiagrams,
+          image_generation_enabled: imageGenerationEnabled,
         }),
       });
       // template-info.json 업데이트
@@ -435,6 +439,26 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
           <div>
             <span className="text-sm font-medium text-gray-700">인터랙티브 회로도 포함</span>
             <p className="text-xs text-gray-500">Pico 핀배치, 회로 연결도, 센서 모듈 다이어그램을 자동 생성합니다</p>
+          </div>
+        </label>
+      </div>
+
+      {/* 이미지 자동 생성 옵션 */}
+      <div className="mb-4">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={imageGenerationEnabled}
+              onChange={(e) => setImageGenerationEnabled(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
+            <div className="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
+          </div>
+          <div>
+            <span className="text-sm font-medium text-gray-700">이미지 자동 생성 (Gemini Imagen)</span>
+            <p className="text-xs text-gray-500">챕터 생성 시 이미지 플레이스홀더를 감지하여 AI 이미지를 자동 생성합니다 (Google API 키 필요)</p>
           </div>
         </label>
       </div>

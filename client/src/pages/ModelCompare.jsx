@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { apiFetch, API_BASE, getApiKey } from '../api/client';
+import { getAuthToken } from '../components/EntryForm';
 import ReactMarkdown from 'react-markdown';
 
 // 정보·AI 교육 특화 평가 프리셋
@@ -151,6 +152,10 @@ export default function ModelCompare() {
 
   const getAuthHeaders = () => {
     const h = {};
+    // JWT 인증 토큰
+    const token = getAuthToken();
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    // 프로바이더별 API 키
     const k = { anthropic: localStorage.getItem('eduflow_api_key'), openai: localStorage.getItem('eduflow_openai_key'), google: localStorage.getItem('eduflow_google_key'), upstage: localStorage.getItem('eduflow_upstage_key') };
     if (k.anthropic) h['x-api-key'] = k.anthropic;
     if (k.openai) h['x-openai-key'] = k.openai;

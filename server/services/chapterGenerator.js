@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import pLimit from 'p-limit';
 import { TemplateManager } from './templateManager.js';
 import { streamChat, detectProvider, resolveApiKey } from './aiProvider.js';
+import { ImageGenerator } from './imageGenerator.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -687,6 +688,25 @@ ${courseInfo}
     const isClassPreview = templateId === 'class-preview';
     const isAiLiteracy = templateId === 'lesson-per-session';
 
+    // 이미지 자동 생성 가이드 (활성화된 경우에만 프롬프트에 추가)
+    let imageGuide = '';
+    if (this.projectConfig.image_generation_enabled) {
+      imageGuide = `
+## 이미지 삽입 (자동 생성)
+교재에 시각 자료가 필요한 곳에 아래 형식으로 이미지 플레이스홀더를 삽입하세요:
+<!-- IMAGE: 이미지에 대한 상세한 설명 -->
+
+예시:
+<!-- IMAGE: DNA 이중나선 구조를 보여주는 3D 모델, 염기쌍이 색상으로 구분됨 -->
+<!-- IMAGE: 한국의 삼국시대 영토 변화를 보여주는 지도 (고구려-파랑, 백제-초록, 신라-빨강) -->
+
+주의:
+- 설명은 구체적이고 교육적 맥락이 명확해야 합니다
+- 차시당 3개 이내로 제한하세요 (생성 시간 고려)
+- Mermaid나 SVG로 충분한 다이어그램은 이미지 대신 코드로 작성하세요
+`;
+    }
+
     // === JSON 기반 프롬프트 빌더 ===
     // 변수 맵 구성
     const vars = {
@@ -699,6 +719,7 @@ ${courseInfo}
       refsText,
       guidelinesText,
       templateAddition,
+      imageGuide,
       outline: outline || '개요 없음',
       'pc.role': pc.role,
       'pc.audience': pc.audience,
@@ -883,24 +904,46 @@ ${courseInfo}
       if (progressCallback) progressCallback(`🤖 ${chapterId} Claude API 호출 중...`);
 
       const result = await this._streamGenerate(model, effectiveMaxTokens, prompt, chapterId, progressCallback);
+
+      // 이미지 플레이스홀더가 있고 이미지 생성이 활성화되어 있으면 이미지 자동 생성
+      let finalContent = result.content;
+      if (this.projectConfig.image_generation_enabled) {
+        const googleApiKey = resolveApiKey('google', this.apiKeys);
+        if (googleApiKey) {
+          try {
+            const imgGen = new ImageGenerator(googleApiKey);
+            const placeholders = imgGen.findPlaceholders(finalContent);
+            if (placeholders.length > 0) {
+              this._log(`🖼️ ${chapterId} 이미지 플레이스홀더 ${placeholders.length}개 감지 → 이미지 생성 시작`);
+              finalContent = await imgGen.processChapterImages(finalContent, this.docsPath, chapterId, progressCallback);
+            }
+          } catch (imgErr) {
+            this._log(`⚠️ ${chapterId} 이미지 생성 중 오류 (콘텐츠는 유지): ${imgErr.message}`);
+            if (progressCallback) progressCallback(`⚠️ 이미지 생성 중 오류 발생 (텍스트 콘텐츠는 정상 저장됩니다)`);
+          }
+        } else {
+          this._log(`⚠️ ${chapterId} 이미지 생성 활성화됨, 그러나 Google API 키 없음 → 건너뜀`);
+        }
+      }
+
       const chapterFile = join(this.docsPath, `${chapterId}.md`);
-      await writeFile(chapterFile, result.content, 'utf-8');
+      await writeFile(chapterFile, finalContent, 'utf-8');
 
       if (tokenBudget) {
         tokenBudget.recordUsage(result.outputTokens, reserved);
       }
 
-      this._log(`✅ ${chapterId} 생성 완료 - 입력: ${result.inputTokens}, 출력: ${result.outputTokens}, 문자 수: ${result.content.length}`);
-      if (progressCallback) progressCallback(`✅ ${chapterId} 완료! (${result.content.length.toLocaleString()}자, 토큰: ${(result.inputTokens + result.outputTokens).toLocaleString()})`);
+      this._log(`✅ ${chapterId} 생성 완료 - 입력: ${result.inputTokens}, 출력: ${result.outputTokens}, 문자 수: ${finalContent.length}`);
+      if (progressCallback) progressCallback(`✅ ${chapterId} 완료! (${finalContent.length.toLocaleString()}자, 토큰: ${(result.inputTokens + result.outputTokens).toLocaleString()})`);
 
       // 생성 후 검증 (비차단 — 실패해도 저장은 유지)
-      const validation = this._runPostGenerationValidation(result.content, chapterId, effectiveMaxTokens, estimatedTime, progressCallback);
+      const validation = this._runPostGenerationValidation(finalContent, chapterId, effectiveMaxTokens, estimatedTime, progressCallback);
 
       return {
         success: true,
         chapter_id: chapterId,
         file_path: chapterFile,
-        content: result.content,
+        content: finalContent,
         tokens_used: result.inputTokens + result.outputTokens,
         input_tokens: result.inputTokens,
         output_tokens: result.outputTokens,
@@ -919,23 +962,40 @@ ${courseInfo}
 
           try {
             const retryResult = await this._streamGenerate(model, effectiveMaxTokens, prompt, chapterId, progressCallback, true);
+
+            // 재시도 성공 시에도 이미지 생성 처리
+            let retryContent = retryResult.content;
+            if (this.projectConfig.image_generation_enabled) {
+              const googleApiKey = resolveApiKey('google', this.apiKeys);
+              if (googleApiKey) {
+                try {
+                  const imgGen = new ImageGenerator(googleApiKey);
+                  if (imgGen.findPlaceholders(retryContent).length > 0) {
+                    retryContent = await imgGen.processChapterImages(retryContent, this.docsPath, chapterId, progressCallback);
+                  }
+                } catch (imgErr) {
+                  this._log(`⚠️ ${chapterId} 재시도 이미지 생성 오류: ${imgErr.message}`);
+                }
+              }
+            }
+
             const chapterFile = join(this.docsPath, `${chapterId}.md`);
-            await writeFile(chapterFile, retryResult.content, 'utf-8');
+            await writeFile(chapterFile, retryContent, 'utf-8');
 
             if (tokenBudget) {
               tokenBudget.recordUsage(retryResult.outputTokens, reserved);
             }
 
             this._log(`✅ ${chapterId} 재시도 ${attempt} 성공 - 입력: ${retryResult.inputTokens}, 출력: ${retryResult.outputTokens}`);
-            if (progressCallback) progressCallback(`✅ ${chapterId} 재시도 완료! (${retryResult.content.length.toLocaleString()}자)`);
+            if (progressCallback) progressCallback(`✅ ${chapterId} 재시도 완료! (${retryContent.length.toLocaleString()}자)`);
 
-            const validation = this._runPostGenerationValidation(retryResult.content, chapterId, effectiveMaxTokens, estimatedTime, progressCallback);
+            const validation = this._runPostGenerationValidation(retryContent, chapterId, effectiveMaxTokens, estimatedTime, progressCallback);
 
             return {
               success: true,
               chapter_id: chapterId,
               file_path: chapterFile,
-              content: retryResult.content,
+              content: retryContent,
               tokens_used: retryResult.inputTokens + retryResult.outputTokens,
               input_tokens: retryResult.inputTokens,
               output_tokens: retryResult.outputTokens,
@@ -962,23 +1022,40 @@ ${courseInfo}
 
         try {
           const retryResult = await this._streamGenerate(model, effectiveMaxTokens, prompt, chapterId, progressCallback, true);
+
+          // 529 재시도 성공 시에도 이미지 생성 처리
+          let retryContent529 = retryResult.content;
+          if (this.projectConfig.image_generation_enabled) {
+            const googleApiKey = resolveApiKey('google', this.apiKeys);
+            if (googleApiKey) {
+              try {
+                const imgGen = new ImageGenerator(googleApiKey);
+                if (imgGen.findPlaceholders(retryContent529).length > 0) {
+                  retryContent529 = await imgGen.processChapterImages(retryContent529, this.docsPath, chapterId, progressCallback);
+                }
+              } catch (imgErr) {
+                this._log(`⚠️ ${chapterId} 529 재시도 이미지 생성 오류: ${imgErr.message}`);
+              }
+            }
+          }
+
           const chapterFile = join(this.docsPath, `${chapterId}.md`);
-          await writeFile(chapterFile, retryResult.content, 'utf-8');
+          await writeFile(chapterFile, retryContent529, 'utf-8');
 
           if (tokenBudget) {
             tokenBudget.recordUsage(retryResult.outputTokens, reserved);
           }
 
           this._log(`✅ ${chapterId} 529 재시도 성공`);
-          if (progressCallback) progressCallback(`✅ ${chapterId} 재시도 완료! (${retryResult.content.length.toLocaleString()}자)`);
+          if (progressCallback) progressCallback(`✅ ${chapterId} 재시도 완료! (${retryContent529.length.toLocaleString()}자)`);
 
-          const validation = this._runPostGenerationValidation(retryResult.content, chapterId, effectiveMaxTokens, estimatedTime, progressCallback);
+          const validation = this._runPostGenerationValidation(retryContent529, chapterId, effectiveMaxTokens, estimatedTime, progressCallback);
 
           return {
             success: true,
             chapter_id: chapterId,
             file_path: chapterFile,
-            content: retryResult.content,
+            content: retryContent529,
             tokens_used: retryResult.inputTokens + retryResult.outputTokens,
             input_tokens: retryResult.inputTokens,
             output_tokens: retryResult.outputTokens,
