@@ -3,10 +3,26 @@ import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useProjectStore } from '../stores/projectStore';
-import { apiFetch, apiStreamPost } from '../api/client';
+import { apiFetch, apiStreamPost, API_BASE } from '../api/client';
+import { getAuthToken } from '../components/EntryForm';
 import ModelSelector from '../components/ModelSelector';
 
 const TABS = ['💬 대화형 모드', '🤖 배치 자동화', '✏️ 챕터 편집'];
+
+// 마크다운 이미지를 API 경로로 변환하는 커스텀 컴포넌트
+function makeMarkdownComponents(projectName) {
+  return {
+    img: ({ src, alt, ...props }) => {
+      // images/xxx.png → API 경로로 변환
+      if (src && src.startsWith('images/')) {
+        const token = getAuthToken();
+        const apiSrc = `${API_BASE}/api/projects/${projectName}/chapters/images/${src.replace('images/', '')}${token ? '?token=' + token : ''}`;
+        return <img src={apiSrc} alt={alt} style={{ maxWidth: '100%', borderRadius: 8 }} {...props} />;
+      }
+      return <img src={src} alt={alt} {...props} />;
+    },
+  };
+}
 
 export default function ChapterCreation() {
   const { currentProject, refreshProgress } = useProjectStore();
@@ -279,7 +295,7 @@ function InteractiveTab({ project }) {
               <div className="flex-1 overflow-y-auto p-4">
                 {previewContent ? (
                   <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{previewContent}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={makeMarkdownComponents(project.name)}>{previewContent}</ReactMarkdown>
                   </div>
                 ) : (
                   <p className="text-sm text-gray-400 text-center mt-8">아직 작성된 내용이 없습니다</p>
@@ -1533,7 +1549,7 @@ function EditorTab({ project }) {
           {showPreview ? (
             <div className="h-full overflow-y-auto p-6">
               <div className="prose prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={makeMarkdownComponents(projectId)}>{content}</ReactMarkdown>
               </div>
             </div>
           ) : (
