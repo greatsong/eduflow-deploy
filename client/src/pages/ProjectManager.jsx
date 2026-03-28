@@ -510,13 +510,13 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       {/* 교재 설계 (v2 모드) */}
       {(
         <div className="space-y-6 mb-6">
-          {/* STEP 1: 교과 전문성 */}
+          {/* STEP 1: 교과 영역 */}
           <div>
             <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">1</span>
-              교과 전문성
+              교과 영역
             </h4>
-            <p className="text-sm text-gray-500 mb-3">무엇을 가르치나요?</p>
+            <p className="text-sm text-gray-500 mb-3">교과별로 최적화된 프롬프트와 세부 설정이 제공됩니다</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {whats.map(w => (
                 <button
@@ -531,6 +531,9 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
                 >
                   <span className="text-2xl">{w.icon}</span>
                   <span className="text-sm font-medium text-gray-800">{w.name}</span>
+                  {w.description && (
+                    <span className="text-xs text-gray-400 leading-tight line-clamp-2">{w.description}</span>
+                  )}
                 </button>
               ))}
             </div>

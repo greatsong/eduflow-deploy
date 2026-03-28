@@ -2,8 +2,8 @@
   "id": "teacher-guide",
   "name": "수업 시뮬레이션",
   "icon": "👩‍🏫",
-  "description": "기본 정보(주제/시간/형태)→도입-전개-정리 구조→발문과 예상 반응→수업 장면 시나리오→4C 역량 연계→평가 루브릭 포함.",
-  "educational_model": "수업 시뮬레이션 — 이 문서만 읽으면 바로 수업 가능한 완성형 가이드",
+  "description": "도입-전개-정리 구조, 발문과 예상 반응, 수업 장면 시나리오, 4C 역량 연계, 평가 루브릭 포함.",
+  "educational_model": "수업 시뮬레이션 — 수업 흐름·발문·학생 반응을 담은 교사용 가이드",
   "context_questions": [
     {
       "id": "teaching_style",
