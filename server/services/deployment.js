@@ -331,6 +331,7 @@ theme:
     - navigation.indexes
     - navigation.instant
     - navigation.path
+    - navigation.footer
     - search.suggest
     - search.highlight
     - search.share

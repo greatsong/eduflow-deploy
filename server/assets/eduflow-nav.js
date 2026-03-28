@@ -36,12 +36,8 @@
       localStorage.setItem('ef-sidebar-collapsed', isCollapsed);
     });
 
-    // 메인 콘텐츠 영역에 삽입
-    var content = document.querySelector('.md-content');
-    if (content) {
-      content.style.position = 'relative';
-      content.appendChild(btn);
-    }
+    // body에 직접 삽입 (fixed 포지션)
+    document.body.appendChild(btn);
   }
 
   // ─────────────────────────────────────────

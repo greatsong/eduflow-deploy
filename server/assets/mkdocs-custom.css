@@ -1610,32 +1610,34 @@ summary:focus-visible {
 
 /* 사이드바 토글 버튼 */
 .ef-sidebar-toggle {
-  position: absolute;
-  top: 12px;
-  left: -14px;
-  z-index: 10;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  position: fixed;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  z-index: 100;
+  width: 24px;
+  height: 48px;
+  border-radius: 0 8px 8px 0;
   background: var(--md-primary-fg-color, #4051b5);
   color: white;
-  border: 2px solid white;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  border: none;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.15);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.3s, background 0.2s;
+  transition: background 0.2s, left 0.3s;
+  opacity: 0.7;
 }
 .ef-sidebar-toggle:hover {
   background: var(--md-primary-fg-color--dark, #303fa1);
-  transform: scale(1.1);
+  opacity: 1;
 }
 .ef-sidebar-toggle.is-collapsed {
-  transform: rotate(180deg);
+  left: 0;
 }
-.ef-sidebar-toggle.is-collapsed:hover {
-  transform: rotate(180deg) scale(1.1);
+.ef-sidebar-toggle.is-collapsed svg {
+  transform: rotate(180deg);
 }
 
 /* 사이드바 접힌 상태 */
