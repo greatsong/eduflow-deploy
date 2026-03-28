@@ -402,22 +402,28 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
           author: form.author,
           description: form.description,
           target_audience: form.target_audience,
-          include_hw_diagrams: includeHwDiagrams,
-          image_generation_enabled: imageGenerationEnabled,
+          include_hw_diagrams: selectedFeatures.includes('hw_diagrams'),
+          image_generation_enabled: selectedFeatures.includes('image_generation'),
           assessment_level: assessmentLevel,
         }),
       });
-      // template-info.json 업데이트
+      // template-info.json 업데이트 (v2 정보 포함)
+      const templateInfoBody = {
+        toc_prompt_addition: tocPrompt,
+        chapter_prompt_addition: chapterPrompt,
+      };
+      if (selectedWhat && selectedHow) {
+        templateInfoBody.what_id = selectedWhat;
+        templateInfoBody.how_id = selectedHow;
+        templateInfoBody.features = selectedFeatures;
+        templateInfoBody.context_answers = contextAnswers;
+      }
       await apiFetch(`/api/projects/${project.name}/template-info`, {
         method: 'PUT',
-        body: JSON.stringify({
-          template_id: selectedTemplate,
-          toc_prompt_addition: tocPrompt,
-          chapter_prompt_addition: chapterPrompt,
-        }),
+        body: JSON.stringify(templateInfoBody),
       });
       await onUpdated();
-      setMessage('프로젝트가 업데이트되었습니다!');
+      setMessage('updated');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -457,13 +463,15 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
       {message && (
         <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <p className="text-sm text-green-700 font-medium">{message}</p>
-          {message.includes('생성되었습니다') && (
+          <p className="text-sm text-green-700 font-medium">
+            {message === 'updated' ? '프로젝트가 업데이트되었습니다!' : message}
+          </p>
+          {(message.includes('생성되었습니다') || message === 'updated') && (
             <button
               onClick={() => navigate('/discussion')}
               className="mt-3 w-full py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
             >
-              💬 Step 1: 방향성 논의 시작하기 →
+              💬 방향성 논의로 이동 →
             </button>
           )}
         </div>

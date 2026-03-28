@@ -494,7 +494,7 @@ router.put('/:id/template-info', asyncHandler(async (req, res) => {
     info = JSON.parse(await readFile(infoFile, 'utf-8'));
   }
 
-  const { toc_prompt_addition, chapter_prompt_addition } = req.body;
+  const { toc_prompt_addition, chapter_prompt_addition, what_id, how_id, features, context_answers } = req.body;
   if (toc_prompt_addition !== undefined) {
     info.toc_prompt_addition = toc_prompt_addition;
   }
@@ -502,6 +502,12 @@ router.put('/:id/template-info', asyncHandler(async (req, res) => {
     info.chapter_prompt_addition = chapter_prompt_addition;
   }
   info.custom_prompt_config = { toc_prompt_addition, chapter_prompt_addition };
+
+  // v2 필드 업데이트
+  if (what_id !== undefined) info.what_id = what_id;
+  if (how_id !== undefined) info.how_id = how_id;
+  if (features !== undefined) info.features = features;
+  if (context_answers !== undefined) info.context_answers = context_answers;
 
   await writeFile(infoFile, JSON.stringify(info, null, 2), 'utf-8');
   res.json({ success: true, ...info });
