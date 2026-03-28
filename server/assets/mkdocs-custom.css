@@ -1409,3 +1409,38 @@ summary:focus-visible {
     break-inside: avoid;
   }
 }
+
+/* ============================================================
+   발행 정보 푸터 (자연스러운 소형 푸터)
+   ============================================================ */
+.publish-footer {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  line-height: 1.8;
+  padding: 0.5rem 0;
+}
+
+.publish-footer a {
+  color: #9ca3af;
+  text-decoration: none;
+  border-bottom: 1px dotted #d1d5db;
+  transition: color 0.2s;
+}
+
+.publish-footer a:hover {
+  color: #6b7280;
+}
+
+[data-md-color-scheme="slate"] .publish-footer {
+  color: #6b7280;
+}
+
+[data-md-color-scheme="slate"] .publish-footer a {
+  color: #6b7280;
+  border-bottom-color: #4b5563;
+}
+
+[data-md-color-scheme="slate"] .publish-footer a:hover {
+  color: #9ca3af;
+}

@@ -394,15 +394,21 @@ ${navYaml}`;
         }
       }
 
-      // 발행 정보 (하단)
+      // 발행 정보 (하단 — 자연스러운 소형 푸터)
+      const pubParts = [];
+      if (publisher) pubParts.push(publisher);
+      if (creatorAffiliation) pubParts.push(creatorAffiliation);
+      pubParts.push(publishedDate);
+      pubParts.push(`검토: ${reviewerText}`);
+
       indexContent += '\n---\n\n';
-      indexContent += '!!! info "발행 정보"\n';
-      if (publisher) indexContent += `    **발행인**: ${publisher}\n`;
-      if (creatorAffiliation) indexContent += `    **소속**: ${creatorAffiliation}\n`;
-      indexContent += `    **발행일**: ${publishedDate}\n`;
-      indexContent += `    **검토**: ${reviewerText}\n`;
-      if (repoUrl) indexContent += `    **GitHub**: [소스 보기 / 수정 제안](${repoUrl})\n`;
-      indexContent += `    **도구**: [EduFlow](https://eduflow-greatsong.fly.dev/) — AI 교육자료 생성 플랫폼\n`;
+      indexContent += `<div class="publish-footer" markdown>\n\n`;
+      indexContent += pubParts.join(' · ') + '\n\n';
+      const links = [];
+      if (repoUrl) links.push(`[GitHub](${repoUrl})`);
+      links.push('[EduFlow](https://eduflow-greatsong.fly.dev/)');
+      indexContent += links.join(' · ') + '\n\n';
+      indexContent += `</div>\n`;
 
       await writeFile(indexPath, indexContent, 'utf-8');
     }

@@ -289,10 +289,14 @@ export class TemplateComposer {
       contextTemplate = contextTemplate.replaceAll(`{{${key}}}`, String(value));
     }
 
-    // 6) required_assets 병합
+    // 6) 교육학적 맥락 블록 생성 (context_answers → 챕터 프롬프트 직접 주입용)
+    //    master-context.md와 별개로, 챕터 생성 시 AI가 직접 참고하는 구조화된 맥락
+    const pedagogicalContext = this._buildPedagogicalContext(what, contextAnswers);
+
+    // 7) required_assets 병합
     const requiredAssets = this._mergeAssets(how.required_assets, features);
 
-    // 7) 호환성 검사
+    // 8) 호환성 검사
     const compatibility = this.checkCompatibility(what, how, featureIds);
 
     return {
@@ -301,6 +305,7 @@ export class TemplateComposer {
       contentRules,
       featureBlocks,
       deliveryRules: how.delivery_rules || '',
+      pedagogicalContext,
       tocAddition,
       chapterAddition,
       docStructure: how.doc_structure || {},
@@ -364,5 +369,30 @@ export class TemplateComposer {
       }
     }
     return merged;
+  }
+
+  /**
+   * 교육학적 맥락 블록 생성
+   * - context_answers를 챕터/목차 프롬프트에 직접 주입하기 위한 구조화된 텍스트
+   * - 학술적 프레임워크가 아닌, AI가 좋은 교재를 만들기 위해 필요한 실질적 맥락
+   * - 헌법 제6조(대화형 협력): 교사의 의도를 AI가 정확히 이해하도록 돕는다
+   */
+  _buildPedagogicalContext(what, contextAnswers = {}) {
+    if (!contextAnswers || Object.keys(contextAnswers).length === 0) return '';
+
+    const questions = what.context_questions || [];
+    const lines = ['## 교사가 설정한 교육 맥락'];
+
+    for (const q of questions) {
+      const answer = contextAnswers[q.id];
+      if (!answer || answer === '') continue;
+      lines.push(`- **${q.label}**: ${answer}`);
+    }
+
+    if (lines.length <= 1) return ''; // 답변이 하나도 없으면 빈 문자열
+
+    lines.push('');
+    lines.push('위 맥락을 반영하여 학습자 수준에 맞는 내용과 난이도를 조절하세요.');
+    return lines.join('\n');
   }
 }
