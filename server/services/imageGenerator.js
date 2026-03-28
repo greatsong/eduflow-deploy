@@ -14,8 +14,8 @@ import { existsSync } from 'fs';
 const PLACEHOLDER_REGEX = /<!-- IMAGE: (.+?) -->/g;
 
 const IMAGE_MODELS = [
-  'gemini-2.0-flash-preview-image-generation',  // 이미지 생성 지원 모델
-  'gemini-2.0-flash',                           // 폴백
+  'gemini-2.5-flash-preview-image-generation',   // Nano Banana (안정)
+  'gemini-2.0-flash-preview-image-generation',   // 폴백
 ];
 
 // 병렬 생성 동시 요청 수 (API 레이트 리밋 고려)
@@ -76,32 +76,40 @@ export class ImageGenerator {
 
     const prompt = this._buildPrompt(description);
 
-    try {
-      const response = await this.client.models.generateContent({
-        model: this.model,
-        contents: prompt,
-        config: {
-          responseModalities: ['IMAGE'],
-          imageConfig: { aspectRatio, imageSize },
-        },
-      });
+    // 모델 폴백: 첫 번째 모델 실패 시 다음 모델로 시도
+    const modelsToTry = [this.model, ...IMAGE_MODELS.filter(m => m !== this.model)];
 
-      if (response.candidates?.[0]?.content?.parts) {
-        for (const part of response.candidates[0].content.parts) {
-          if (part.inlineData) {
-            return {
-              success: true,
-              imageData: part.inlineData.data,
-              mimeType: part.inlineData.mimeType || 'image/png',
-            };
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await this.client.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseModalities: ['TEXT', 'IMAGE'],
+            imageConfig: { aspectRatio, imageSize },
+          },
+        });
+
+        if (response.candidates?.[0]?.content?.parts) {
+          for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+              console.log(`이미지 생성 성공 (모델: ${modelName})`);
+              return {
+                success: true,
+                imageData: part.inlineData.data,
+                mimeType: part.inlineData.mimeType || 'image/png',
+              };
+            }
           }
         }
+      } catch (error) {
+        console.error(`이미지 생성 실패 (${modelName}):`, error.message);
+        // 다음 모델로 폴백
+        continue;
       }
-      return { success: false, error: '이미지가 생성되지 않았습니다' };
-    } catch (error) {
-      console.error('이미지 생성 실패:', error.message);
-      return { success: false, error: error.message };
     }
+
+    return { success: false, error: '모든 이미지 생성 모델이 실패했습니다' };
   }
 
   /**
