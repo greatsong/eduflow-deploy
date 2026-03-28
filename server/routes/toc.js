@@ -68,13 +68,15 @@ router.post('/generate', requireApiKey, requireModelAccess, asyncHandler(async (
       return;
     }
 
-    // 참고자료 로드
+    // 참고자료 로드 (PDF, DOCX, XLSX, HWP 등 모든 포맷 지원)
     const refManager = new ReferenceManager(projPath);
     const refs = await refManager.listFiles();
     const referencesContent = [];
     for (const ref of refs) {
-      const content = await refManager.readFile(ref.name);
-      if (content) referencesContent.push(content);
+      try {
+        const result = await refManager.readFileContent(ref.name);
+        if (result.status === 'ok' && result.content) referencesContent.push(result.content);
+      } catch { /* skip */ }
     }
 
     // 목차 생성 (SSE 스트리밍)
