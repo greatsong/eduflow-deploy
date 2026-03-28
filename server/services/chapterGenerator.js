@@ -677,6 +677,12 @@ export class ChapterGenerator {
     const tm = new TemplateManager();
     const templateAddition = await tm.getChapterPromptAddition(this.projectPath);
 
+    // v2: 교사가 설정한 교육 맥락 (context_answers → 프롬프트 직접 주입)
+    let pedagogicalContext = '';
+    if (this.templateInfo?.pedagogical_context) {
+      pedagogicalContext = `\n${this.templateInfo.pedagogical_context}\n`;
+    }
+
     // 사용자 작성 가이드라인 로드
     let guidelinesText = '';
     const guidelinesFile = join(this.projectPath, 'generation_guidelines.md');
@@ -767,6 +773,7 @@ ${courseInfo}
       refsText,
       guidelinesText,
       templateAddition,
+      pedagogicalContext,
       imageGuide,
       outline: outline || '개요 없음',
       'pc.role': pc.role,

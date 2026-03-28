@@ -337,6 +337,7 @@ export class TemplateComposer {
       template_name: composed.templateName,
       toc_prompt_addition: composed.tocAddition,
       chapter_prompt_addition: composed.chapterAddition,
+      pedagogical_context: composed.pedagogicalContext,
       validation: composed.validation,
       required_assets: composed.requiredAssets,
     };
