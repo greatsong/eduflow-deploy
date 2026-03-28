@@ -186,7 +186,7 @@ export default function Layout() {
 
         {/* 하단 정보 */}
         <div className="p-4 border-t border-emerald-100/40 text-xs text-gray-400">
-          EduFlow v0.3.0 Multi-AI
+          EduFlow v0.4.0
         </div>
       </aside>
 

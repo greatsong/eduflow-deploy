@@ -16,7 +16,7 @@ export default function Home() {
           <div className="flex-1 text-center md:text-left">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 backdrop-blur rounded-full text-xs font-medium mb-5 border border-white/20">
               <span className="w-2 h-2 bg-emerald-300 rounded-full animate-pulse" />
-              v0.3 — Multi-AI · 2축 템플릿 · 오픈소스
+              v0.4 — 2축 템플릿 · 멀티 AI · 오픈소스
             </div>
             <h1 className="text-4xl md:text-5xl font-extrabold leading-tight mb-4 tracking-tight">
               에듀플로
