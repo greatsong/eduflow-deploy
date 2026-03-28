@@ -261,7 +261,7 @@ ${info.part_context ? `- ${info.part_context}` : ''}
 
 현재 내용:
 \`\`\`markdown
-${currentContent.slice(0, 3000) || '(아직 작성되지 않음)'}
+${currentContent.slice(0, 8000) || '(아직 작성되지 않음)'}
 \`\`\`
 
 사용자의 요청에 따라:
