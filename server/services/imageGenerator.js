@@ -14,8 +14,8 @@ import { existsSync } from 'fs';
 const PLACEHOLDER_REGEX = /<!-- IMAGE: (.+?) -->/g;
 
 const IMAGE_MODELS = [
-  'gemini-2.0-flash-exp',
-  'gemini-2.0-flash',
+  'gemini-2.0-flash-preview-image-generation',  // 이미지 생성 지원 모델
+  'gemini-2.0-flash',                           // 폴백
 ];
 
 // 병렬 생성 동시 요청 수 (API 레이트 리밋 고려)
