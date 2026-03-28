@@ -29,11 +29,19 @@ export class ImageGenerator {
    * @param {object} [usageTracker] - { record(data) } 토큰 사용량 기록기
    * @param {object} [userInfo] - { userId, userName, userEmail, projectId }
    */
-  constructor(apiKey, model = IMAGE_MODELS[0], usageTracker = null, userInfo = {}) {
+  /**
+   * @param {string} apiKey - Google API 키
+   * @param {string} [model] - 사용할 모델
+   * @param {object} [usageTracker] - { record(data) } 토큰 사용량 기록기
+   * @param {object} [userInfo] - { userId, userName, userEmail, projectId }
+   * @param {string} [styleGuide] - 사용자 작성 이미지 스타일 가이드라인
+   */
+  constructor(apiKey, model = IMAGE_MODELS[0], usageTracker = null, userInfo = {}, styleGuide = '') {
     this.client = new GoogleGenAI({ apiKey });
     this.model = model;
     this.usageTracker = usageTracker;
     this.userInfo = userInfo;
+    this.styleGuide = styleGuide;
   }
 
   _recordUsage(modelUsed, success) {
@@ -70,7 +78,7 @@ export class ImageGenerator {
    * 교육용 이미지 프롬프트를 정교하게 구성
    */
   _buildPrompt(description) {
-    return [
+    const base = [
       `Create an educational illustration for a textbook.`,
       ``,
       `Subject: ${description}`,
@@ -90,7 +98,16 @@ export class ImageGenerator {
       `- No watermarks, signatures, or attribution text`,
       `- If showing a process: use arrows, numbered steps, clear flow`,
       `- Landscape orientation (wider than tall)`,
-    ].join('\n');
+    ];
+
+    // 사용자 가이드라인이 있으면 추가
+    if (this.styleGuide) {
+      base.push('');
+      base.push('Additional style guide from the author:');
+      base.push(this.styleGuide);
+    }
+
+    return base.join('\n');
   }
 
   async generateImage(description, options = {}) {

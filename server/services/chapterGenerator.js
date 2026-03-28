@@ -1043,7 +1043,13 @@ ${courseInfo}
         const googleApiKey = resolveApiKey('google', this.apiKeys);
         if (googleApiKey) {
           try {
-            const imgGen = new ImageGenerator(googleApiKey);
+            // 이미지 가이드라인 로드
+            let imgStyleGuide = '';
+            const imgGuideFile = join(this.projectPath, 'image_guidelines.md');
+            if (existsSync(imgGuideFile)) {
+              imgStyleGuide = (await readFile(imgGuideFile, 'utf-8')).trim();
+            }
+            const imgGen = new ImageGenerator(googleApiKey, undefined, null, {}, imgStyleGuide);
             const placeholders = imgGen.findPlaceholders(finalContent);
             if (placeholders.length > 0) {
               this._log(`🖼️ ${chapterId} 이미지 플레이스홀더 ${placeholders.length}개 감지 → 이미지 생성 시작`);

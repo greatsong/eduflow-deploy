@@ -547,6 +547,9 @@ function BatchTab({ project, onComplete }) {
   const [sampleTokens, setSampleTokens] = useState(null);
   const [guidelines, setGuidelines] = useState('');
   const [guidelinesSaved, setGuidelinesSaved] = useState(true);
+  const [imageGuidelines, setImageGuidelines] = useState('');
+  const [imageGuidelinesSaved, setImageGuidelinesSaved] = useState(true);
+  const [guideTab, setGuideTab] = useState('content');
   const [showSample, setShowSample] = useState(true);
   const [models, setModels] = useState([]);
 
@@ -577,6 +580,21 @@ function BatchTab({ project, onComplete }) {
     apiFetch(`/api/projects/${project.name}/toc/guidelines`)
       .then((r) => { setGuidelines(r.guidelines || ''); setGuidelinesSaved(true); })
       .catch(() => {});
+    apiFetch(`/api/projects/${project.name}/toc/image-guidelines`)
+      .then((r) => {
+        const defaultGuide = `애니메이션 스타일의 따뜻한 톤의 일러스트레이션
+- 친근하고 부드러운 캐릭터와 오브젝트
+- 파스텔 색상 + 따뜻한 하이라이트
+- 깔끔한 라인, 부드러운 그라데이션
+- 주요 요소에 한국어 라벨 포함
+- 밝고 따뜻한 배경
+- 교육 목적에 맞는 요소만 포함 (장식 불필요)
+- 워터마크/서명 없음
+- 가로 방향 (landscape)`;
+        setImageGuidelines(r.guidelines || defaultGuide);
+        setImageGuidelinesSaved(!!r.guidelines);
+      })
+      .catch(() => {});
   }, [project]);
 
   // 샘플 챕터 생성
@@ -606,7 +624,7 @@ function BatchTab({ project, onComplete }) {
     }
   };
 
-  // 가이드라인 저장
+  // 내용 가이드라인 저장
   const handleSaveGuidelines = async () => {
     try {
       await apiFetch(`/api/projects/${project.name}/toc/guidelines`, {
@@ -616,6 +634,19 @@ function BatchTab({ project, onComplete }) {
       setGuidelinesSaved(true);
     } catch (err) {
       alert(`가이드라인 저장 실패: ${err.message}`);
+    }
+  };
+
+  // 이미지 가이드라인 저장
+  const handleSaveImageGuidelines = async () => {
+    try {
+      await apiFetch(`/api/projects/${project.name}/toc/image-guidelines`, {
+        method: 'PUT',
+        body: { guidelines: imageGuidelines },
+      });
+      setImageGuidelinesSaved(true);
+    } catch (err) {
+      alert(`이미지 가이드라인 저장 실패: ${err.message}`);
     }
   };
 
@@ -944,33 +975,66 @@ function BatchTab({ project, onComplete }) {
                   )}
                 </div>
 
-                {/* 오른쪽: 가이드라인 편집 */}
+                {/* 오른쪽: 가이드라인 편집 (내용 + 이미지 탭) */}
                 <div className="w-80 flex-shrink-0 flex flex-col">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-gray-700">📝 생성 가이드라인</span>
-                    <div className="flex items-center gap-2">
-                      {!guidelinesSaved && (
-                        <span className="text-xs text-amber-600 animate-pulse">● 수정됨</span>
-                      )}
-                      <button
-                        onClick={handleSaveGuidelines}
-                        disabled={guidelinesSaved}
-                        className="px-2.5 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-                      >
-                        💾 저장
-                      </button>
-                    </div>
+                  <div className="flex items-center gap-1 mb-2">
+                    <button
+                      onClick={() => setGuideTab?.('content')}
+                      className={`px-2 py-1 text-xs rounded-lg transition-colors ${
+                        (guideTab || 'content') === 'content'
+                          ? 'bg-emerald-100 text-emerald-700 font-medium'
+                          : 'text-gray-500 hover:bg-gray-100'
+                      }`}
+                    >
+                      📝 내용 가이드
+                      {!guidelinesSaved && <span className="ml-1 text-amber-600">●</span>}
+                    </button>
+                    <button
+                      onClick={() => setGuideTab?.('image')}
+                      className={`px-2 py-1 text-xs rounded-lg transition-colors ${
+                        guideTab === 'image'
+                          ? 'bg-purple-100 text-purple-700 font-medium'
+                          : 'text-gray-500 hover:bg-gray-100'
+                      }`}
+                    >
+                      🖼️ 이미지 컨셉
+                      {!imageGuidelinesSaved && <span className="ml-1 text-amber-600">●</span>}
+                    </button>
+                    <div className="flex-1" />
+                    <button
+                      onClick={(guideTab || 'content') === 'content' ? handleSaveGuidelines : handleSaveImageGuidelines}
+                      disabled={(guideTab || 'content') === 'content' ? guidelinesSaved : imageGuidelinesSaved}
+                      className="px-2.5 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    >
+                      💾 저장
+                    </button>
                   </div>
-                  <textarea
-                    value={guidelines}
-                    onChange={(e) => { setGuidelines(e.target.value); setGuidelinesSaved(false); }}
-                    placeholder={"생성 가이드라인을 입력하세요...\n\n예시:\n- 모든 챕터에 실습 예제를 포함해주세요\n- 코드 블록에는 항상 주석을 달아주세요\n- 각 섹션 끝에 핵심 정리를 추가해주세요\n- 학생 수준은 고등학교 1학년입니다"}
-                    className="flex-1 min-h-[200px] w-full text-sm border border-gray-300 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-mono"
-                  />
-                  <p className="text-xs text-gray-400 mt-1.5">
-                    💡 이 가이드라인은 모든 챕터 생성 시 AI에게 전달됩니다.
-                    {samplePhase === 'review' && ' 가이드를 수정한 후 샘플을 재생성하여 결과를 확인하세요.'}
-                  </p>
+
+                  {(guideTab || 'content') === 'content' ? (
+                    <>
+                      <textarea
+                        value={guidelines}
+                        onChange={(e) => { setGuidelines(e.target.value); setGuidelinesSaved(false); }}
+                        placeholder={"내용 가이드라인을 입력하세요...\n\n예시:\n- 모든 챕터에 실습 예제를 포함\n- 코드 블록에는 항상 주석\n- 각 섹션 끝에 핵심 정리\n- 학생 수준은 고등학교 1학년"}
+                        className="flex-1 min-h-[200px] w-full text-sm border border-gray-300 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-mono"
+                      />
+                      <p className="text-xs text-gray-400 mt-1.5">
+                        💡 텍스트와 구성 요소에 대한 가이드. 모든 챕터 생성 시 AI에게 전달됩니다.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <textarea
+                        value={imageGuidelines}
+                        onChange={(e) => { setImageGuidelines(e.target.value); setImageGuidelinesSaved(false); }}
+                        placeholder={"이미지 생성 컨셉을 입력하세요...\n\n예시:\n- 애니메이션 스타일의 따뜻한 톤\n- 캐릭터는 한국 고등학생\n- 교실/학교 배경 선호\n- 파스텔 색상, 밝은 분위기\n- 텍스트 라벨은 한국어로"}
+                        className="flex-1 min-h-[200px] w-full text-sm border border-purple-300 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono"
+                      />
+                      <p className="text-xs text-gray-400 mt-1.5">
+                        🖼️ 이미지 생성 시 스타일과 컨셉을 지정합니다. Gemini 이미지 API에 전달됩니다.
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
