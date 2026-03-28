@@ -201,6 +201,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [selectedFeatures, setSelectedFeatures] = useState(draft?.selectedFeatures || []);
   const [contextAnswers, setContextAnswers] = useState(draft?.contextAnswers || {});
   const prevSelectedWhat = useRef(draft?.selectedWhat || '');
+  const isLoadingProject = useRef(false);
   const tocPromptDirty = useRef(false);
   const chapterPromptDirty = useRef(false);
   const [whats, setWhats] = useState([]);
@@ -249,10 +250,12 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     const how = hows.find(h => h.id === selectedHow);
     if (!what || !how) return;
 
-    // 기본 기능 자동 선택
-    const defaults = [...new Set([...(what.default_features || []), ...(how.default_features || [])])];
-    const forbidden = new Set([...(what.forbidden_features || []), ...(how.forbidden_features || [])]);
-    setSelectedFeatures(defaults.filter(f => !forbidden.has(f)));
+    // 기본 기능 자동 선택 (프로젝트 로드 중에는 저장된 features 유지)
+    if (!isLoadingProject.current) {
+      const defaults = [...new Set([...(what.default_features || []), ...(how.default_features || [])])];
+      const forbidden = new Set([...(what.forbidden_features || []), ...(how.forbidden_features || [])]);
+      setSelectedFeatures(defaults.filter(f => !forbidden.has(f)));
+    }
 
     // 호환성 경고 생성
     const warnings = [];
@@ -274,8 +277,8 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     }
     setCompatibility({ warnings });
 
-    // WHAT이 실제로 변경된 경우에만 컨텍스트 답변 리셋 (HOW 변경 시에는 유지)
-    if (prevSelectedWhat.current !== selectedWhat) {
+    // WHAT이 실제로 변경된 경우에만 컨텍스트 답변 리셋 (프로젝트 로드 중에는 건너뜀)
+    if (!isLoadingProject.current && prevSelectedWhat.current !== selectedWhat) {
       setContextAnswers({});
       prevSelectedWhat.current = selectedWhat;
     }
@@ -314,12 +317,15 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       // v2 정보 로드 (template-info.json에 저장됨)
       if (templateInfo.what_id) {
         setTemplateMode('v2');
-        // prevSelectedWhat를 먼저 설정하여 useEffect에서 contextAnswers 초기화 방지
+        // 프로젝트 로드 중 플래그 → useEffect에서 features/contextAnswers 덮어쓰기 방지
+        isLoadingProject.current = true;
         prevSelectedWhat.current = templateInfo.what_id;
         setSelectedWhat(templateInfo.what_id || '');
         setSelectedHow(templateInfo.how_id || '');
         setSelectedFeatures(templateInfo.features || []);
         setContextAnswers(templateInfo.context_answers || {});
+        // 다음 렌더 사이클 후 플래그 해제
+        setTimeout(() => { isLoadingProject.current = false; }, 100);
       } else if (templateInfo.template_id) {
         setTemplateMode('classic');
       }
