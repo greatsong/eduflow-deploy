@@ -14,8 +14,9 @@ import { existsSync } from 'fs';
 const PLACEHOLDER_REGEX = /<!-- IMAGE: (.+?) -->/g;
 
 const IMAGE_MODELS = [
-  'gemini-2.5-flash-preview-image-generation',   // Nano Banana (안정)
-  'gemini-2.0-flash-preview-image-generation',   // 폴백
+  'gemini-3.1-flash-image-preview',              // Nano Banana 2 (이전 성공 모델)
+  'gemini-2.5-flash-preview-image-generation',   // Nano Banana (폴백)
+  'gemini-2.0-flash-preview-image-generation',   // 폴백 2
 ];
 
 // 병렬 생성 동시 요청 수 (API 레이트 리밋 고려)
