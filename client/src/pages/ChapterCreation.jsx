@@ -153,6 +153,15 @@ function InteractiveTab({ project }) {
     }
   };
 
+  // 탭 활성화 시 + 이미 선택된 챕터가 있으면 최신 내용 리로드
+  useEffect(() => {
+    if (selectedChapter && project) {
+      apiFetch(`/api/projects/${project.name}/chapters/${selectedChapter.chapter_id}`)
+        .then((data) => setPreviewContent(data.content || ''))
+        .catch(() => {});
+    }
+  }, [project]); // project 변경 시 (탭 전환 포함)
+
   const handleSend = useCallback(async (e) => {
     e.preventDefault();
     const input = inputRef.current;
@@ -1683,7 +1692,7 @@ function EditorTab({ project }) {
       </div>
 
       {/* 편집 영역 */}
-      <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200 min-w-0">
+      <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200 min-w-0 overflow-y-auto">
         {/* 툴바 */}
         <div className="p-3 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1712,7 +1721,7 @@ function EditorTab({ project }) {
         </div>
 
         {/* 내용 */}
-        <div className="flex-1 min-h-0">
+        <div className="min-h-[300px]" style={{ height: 'clamp(300px, 55vh, 600px)' }}>
           {showPreview ? (
             <div className="h-full overflow-y-auto p-6">
               <div className="prose prose-sm max-w-none">

@@ -1,8 +1,6 @@
 /**
  * EduFlow Quiz Engine — 인터랙티브 평가 (assessment_level 4)
  *
- * 마크다운에서 다음 HTML 구조를 사용합니다:
- *
  * <div class="ef-quiz" data-quiz-id="q1">
  *   <p class="ef-quiz-question">질문 텍스트</p>
  *   <div class="ef-quiz-options">
@@ -20,10 +18,19 @@
   'use strict';
 
   function initQuizEngine() {
+    // 이전 요약 버튼 제거 (페이지 전환 시 중복 방지)
+    document.querySelectorAll('.ef-quiz-summary-btn').forEach(function (btn) {
+      btn.remove();
+    });
+
     var quizzes = document.querySelectorAll('.ef-quiz');
     if (!quizzes.length) return;
 
     quizzes.forEach(function (quiz) {
+      // 이미 초기화된 퀴즈는 건너뜀
+      if (quiz.getAttribute('data-initialized')) return;
+      quiz.setAttribute('data-initialized', 'true');
+
       var options = quiz.querySelectorAll('.ef-quiz-option');
       var feedbackEl = quiz.querySelector('.ef-quiz-feedback');
       var checkBtn = document.createElement('button');
@@ -36,13 +43,11 @@
       retryBtn.textContent = '다시 풀기';
       retryBtn.style.display = 'none';
 
-      // 선택 시 채점 버튼 활성화
       options.forEach(function (opt) {
         var radio = opt.querySelector('input[type="radio"]');
         if (radio) {
           radio.addEventListener('change', function () {
             checkBtn.disabled = false;
-            // 이전 결과 초기화
             options.forEach(function (o) {
               o.classList.remove('correct', 'wrong');
             });
@@ -55,7 +60,6 @@
         }
       });
 
-      // 채점
       checkBtn.addEventListener('click', function () {
         var selected = quiz.querySelector('.ef-quiz-option input:checked');
         if (!selected) return;
@@ -63,7 +67,6 @@
         var selectedOpt = selected.closest('.ef-quiz-option');
         var isCorrect = selectedOpt.getAttribute('data-correct') === 'true';
 
-        // 정답 표시
         options.forEach(function (opt) {
           if (opt.getAttribute('data-correct') === 'true') {
             opt.classList.add('correct');
@@ -86,14 +89,12 @@
         }
 
         checkBtn.disabled = true;
-        // 라디오 비활성화
         options.forEach(function (opt) {
           var r = opt.querySelector('input');
           if (r) r.disabled = true;
         });
       });
 
-      // 다시 풀기
       retryBtn.addEventListener('click', function () {
         options.forEach(function (opt) {
           opt.classList.remove('correct', 'wrong');
@@ -108,7 +109,6 @@
         retryBtn.style.display = 'none';
       });
 
-      // 버튼 삽입
       var btnWrap = document.createElement('div');
       btnWrap.className = 'ef-quiz-actions';
       btnWrap.appendChild(checkBtn);
@@ -121,7 +121,7 @@
       }
     });
 
-    // 퀴즈 요약 (페이지 하단)
+    // 퀴즈 요약 (2개 이상일 때만)
     if (quizzes.length > 1) {
       var summaryBtn = document.createElement('button');
       summaryBtn.className = 'ef-quiz-summary-btn';
