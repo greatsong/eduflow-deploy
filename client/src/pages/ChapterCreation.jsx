@@ -734,9 +734,25 @@ function BatchTab({ project, onComplete }) {
       await apiFetch(`/api/projects/${project.name}/chapters/generation-cancel`, {
         method: 'POST',
       });
-      setLogs((prev) => [...prev, '🛑 취소 요청을 보냈습니다. 현재 생성 중인 챕터가 끝나면 중단됩니다...']);
+      setLogs((prev) => [...prev, '🛑 취소 요청을 보냈습니다...']);
+      // 5초 후에도 상태가 running이면 강제로 cancelled로 전환
+      setTimeout(() => {
+        setStatus((prev) => {
+          if (prev === 'running') {
+            stopPolling();
+            setCurrentGenerating(new Set());
+            loadChapters();
+            return 'cancelled';
+          }
+          return prev;
+        });
+      }, 5000);
     } catch (err) {
       setLogs((prev) => [...prev, `❌ 취소 실패: ${err.message}`]);
+      // 취소 API 실패해도 UI는 풀어줌
+      setStatus('cancelled');
+      setCurrentGenerating(new Set());
+      stopPolling();
     }
   };
 
