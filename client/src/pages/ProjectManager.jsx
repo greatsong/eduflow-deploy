@@ -201,7 +201,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [selectedFeatures, setSelectedFeatures] = useState(draft?.selectedFeatures || []);
   const [contextAnswers, setContextAnswers] = useState(draft?.contextAnswers || {});
   const prevSelectedWhat = useRef(draft?.selectedWhat || '');
-  const isLoadingProject = useRef(false);
+  const loadedProjectId = useRef(null); // 로드된 프로젝트 ID — 첫 useEffect 실행 시 리셋 방지
   const tocPromptDirty = useRef(false);
   const chapterPromptDirty = useRef(false);
   const [whats, setWhats] = useState([]);
@@ -250,8 +250,11 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     const how = hows.find(h => h.id === selectedHow);
     if (!what || !how) return;
 
-    // 기본 기능 자동 선택 (프로젝트 로드 중에는 저장된 features 유지)
-    if (!isLoadingProject.current) {
+    // 기본 기능 자동 선택 (기존 프로젝트 로드 직후에는 저장된 features 유지)
+    if (loadedProjectId.current) {
+      // 로드된 프로젝트의 첫 useEffect 실행 — 건너뛰고 플래그 해제
+      loadedProjectId.current = null;
+    } else {
       const defaults = [...new Set([...(what.default_features || []), ...(how.default_features || [])])];
       const forbidden = new Set([...(what.forbidden_features || []), ...(how.forbidden_features || [])]);
       setSelectedFeatures(defaults.filter(f => !forbidden.has(f)));
@@ -277,8 +280,8 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     }
     setCompatibility({ warnings });
 
-    // WHAT이 실제로 변경된 경우에만 컨텍스트 답변 리셋 (프로젝트 로드 중에는 건너뜀)
-    if (!isLoadingProject.current && prevSelectedWhat.current !== selectedWhat) {
+    // WHAT이 실제로 변경된 경우에만 컨텍스트 답변 리셋
+    if (prevSelectedWhat.current && prevSelectedWhat.current !== selectedWhat) {
       setContextAnswers({});
       prevSelectedWhat.current = selectedWhat;
     }
@@ -317,15 +320,13 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       // v2 정보 로드 (template-info.json에 저장됨)
       if (templateInfo.what_id) {
         setTemplateMode('v2');
-        // 프로젝트 로드 중 플래그 → useEffect에서 features/contextAnswers 덮어쓰기 방지
-        isLoadingProject.current = true;
+        // loadedProjectId 설정 → useEffect 첫 실행 시 features 덮어쓰기 방지
+        loadedProjectId.current = project.name;
         prevSelectedWhat.current = templateInfo.what_id;
         setSelectedWhat(templateInfo.what_id || '');
         setSelectedHow(templateInfo.how_id || '');
         setSelectedFeatures(templateInfo.features || []);
         setContextAnswers(templateInfo.context_answers || {});
-        // 다음 렌더 사이클 후 플래그 해제
-        setTimeout(() => { isLoadingProject.current = false; }, 100);
       } else if (templateInfo.template_id) {
         setTemplateMode('classic');
       }
@@ -467,18 +468,10 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
 
       {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
       {message && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
           <p className="text-sm text-green-700 font-medium">
             {message === 'updated' ? '프로젝트가 업데이트되었습니다!' : message}
           </p>
-          {(message.includes('생성되었습니다') || message === 'updated') && (
-            <button
-              onClick={() => navigate('/discussion')}
-              className="mt-3 w-full py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-            >
-              💬 방향성 논의로 이동 →
-            </button>
-          )}
         </div>
       )}
 
@@ -818,18 +811,28 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
           프로젝트 한도에 도달하여 새 프로젝트를 만들 수 없습니다
         </div>
       ) : (
-        <button
-          onClick={isEditMode ? handleUpdate : handleCreate}
-          disabled={saving}
-          className="w-full py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-        >
-          {saving ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              {isEditMode ? '업데이트 중...' : '프로젝트 생성 중...'}
-            </span>
-          ) : isEditMode ? '💾 프로젝트 업데이트' : '🚀 프로젝트 만들기'}
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={isEditMode ? handleUpdate : handleCreate}
+            disabled={saving}
+            className={`${isEditMode ? 'flex-1' : 'w-full'} py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors`}
+          >
+            {saving ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                {isEditMode ? '업데이트 중...' : '프로젝트 생성 중...'}
+              </span>
+            ) : isEditMode ? '💾 프로젝트 업데이트' : '🚀 프로젝트 만들기'}
+          </button>
+          {isEditMode && (
+            <button
+              onClick={() => navigate('/discussion')}
+              className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              💬 방향성 논의 →
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
