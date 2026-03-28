@@ -1235,12 +1235,188 @@ function ReportPanel({ report }) {
 // =============================================
 // 탭 3: 챕터 편집
 // =============================================
+// =============================================
+// 이미지 프롬프트 유틸리티
+// =============================================
+function parseImagePrompts(text) {
+  const regex = /<!-- IMAGE: (.+?) -->/g;
+  const prompts = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    prompts.push({ index: match.index, full: match[0], description: match[1].trim() });
+  }
+  return prompts;
+}
+
+function checkPromptQuality(desc) {
+  const checks = [];
+  if (desc.length < 15) {
+    checks.push({ type: 'warning', msg: `설명이 너무 짧습니다 (${desc.length}자, 15자 이상 권장)` });
+  } else {
+    checks.push({ type: 'success', msg: `구체적인 설명 (${desc.length}자)` });
+  }
+  const eduKw = ['보여주는', '설명하는', '비교하는', '과정', '구조', '변화', '관계', '단계', '분석', '시각화'];
+  if (eduKw.some(k => desc.includes(k))) {
+    checks.push({ type: 'success', msg: '교육 목적 명시됨' });
+  } else {
+    checks.push({ type: 'warning', msg: '"~를 보여주는" 등 교육 목적을 추가하세요' });
+  }
+  if (/색상|라벨|표시|구분|범례|번호/.test(desc)) {
+    checks.push({ type: 'success', msg: '라벨/색상 지정됨' });
+  }
+  if (/일러스트|다이어그램|차트|지도|사진|모델|단면도|그래프|스타일/.test(desc)) {
+    checks.push({ type: 'success', msg: '시각 스타일 명시됨' });
+  }
+  return checks;
+}
+
+// =============================================
+// 이미지 프롬프트 채팅 패널
+// =============================================
+function ImagePromptChat({ project, chapterId, imagePrompt, onApply, onClose, model }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [streamText, setStreamText] = useState('');
+  const chatEndRef = useRef(null);
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, streamText]);
+
+  // 첫 진입 시 AI가 자동 분석
+  useEffect(() => {
+    const checks = checkPromptQuality(imagePrompt);
+    const issues = checks.filter(c => c.type === 'warning').map(c => c.msg);
+    const intro = issues.length > 0
+      ? `현재 프롬프트를 분석했습니다:\n\n${issues.map(i => `⚠️ ${i}`).join('\n')}\n\n어떤 방향으로 개선할까요?`
+      : '현재 프롬프트가 잘 작성되어 있습니다. 추가로 개선하고 싶은 부분이 있으신가요?';
+    setMessages([{ role: 'assistant', content: intro }]);
+  }, [imagePrompt]);
+
+  const handleSend = async (text) => {
+    const msg = text || input.trim();
+    if (!msg || streaming) return;
+    setInput('');
+    const allMessages = [...messages, { role: 'user', content: msg }];
+    setMessages(allMessages);
+    setStreaming(true);
+    setStreamText('');
+
+    try {
+      await apiStreamPost(
+        `/api/projects/${project.name}/chapters/${chapterId}/image-chat`,
+        { imagePrompt, model, messages: allMessages },
+        {
+          onText: (t) => setStreamText(prev => prev + t),
+          onDone: (data) => {
+            setMessages(prev => [...prev, { role: 'assistant', content: data.content || '' }]);
+            setStreamText('');
+            setStreaming(false);
+          },
+          onError: () => setStreaming(false),
+        }
+      );
+    } catch { setStreaming(false); }
+  };
+
+  // 채팅에서 ```image-prompt 블록 찾기
+  const findSuggestedPrompt = (text) => {
+    const m = text.match(/```image-prompt\s*\n([\s\S]*?)```/);
+    return m ? m[1].trim() : null;
+  };
+
+  const quickChips = ['더 구체적으로', '교육 목적 추가', '색상/라벨 지정', '스타일 변경'];
+
+  return (
+    <div className="w-80 bg-white border-l border-gray-200 flex flex-col h-full">
+      <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-gray-900">🖼️ 프롬프트 개선</h4>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+      </div>
+
+      {/* 현재 프롬프트 */}
+      <div className="p-3 bg-gray-50 border-b text-xs">
+        <p className="text-gray-500 mb-1">현재:</p>
+        <p className="text-gray-800 font-medium">{imagePrompt}</p>
+      </div>
+
+      {/* 빠른 제안 칩 */}
+      <div className="p-2 border-b flex flex-wrap gap-1">
+        {quickChips.map(chip => (
+          <button
+            key={chip}
+            onClick={() => handleSend(chip)}
+            disabled={streaming}
+            className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 rounded-full hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {chip}
+          </button>
+        ))}
+      </div>
+
+      {/* 채팅 영역 */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+        {messages.map((m, i) => (
+          <div key={i}>
+            <div className={`text-xs px-3 py-2 rounded-lg whitespace-pre-wrap ${
+              m.role === 'user'
+                ? 'bg-emerald-50 text-emerald-900 ml-6'
+                : 'bg-gray-100 text-gray-800 mr-2'
+            }`}>
+              {m.content}
+            </div>
+            {/* 적용 버튼 — assistant 메시지에 image-prompt 블록이 있으면 표시 */}
+            {m.role === 'assistant' && findSuggestedPrompt(m.content) && (
+              <div className="mt-1 flex gap-1">
+                <button
+                  onClick={() => onApply(findSuggestedPrompt(m.content))}
+                  className="px-2 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                >
+                  ✅ 적용
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+        {streamText && (
+          <div className="text-xs px-3 py-2 rounded-lg bg-gray-100 text-gray-800 mr-2 whitespace-pre-wrap">
+            {streamText}▌
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* 입력 */}
+      <div className="p-2 border-t">
+        <div className="flex gap-1">
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+            placeholder="개선 아이디어..."
+            disabled={streaming}
+            className="flex-1 text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none disabled:opacity-50"
+          />
+          <button
+            onClick={() => handleSend()}
+            disabled={streaming || !input.trim()}
+            className="px-2 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+          >
+            전송
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditorTab({ project }) {
   const [chapters, setChapters] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const [chatPrompt, setChatPrompt] = useState(null); // 이미지 채팅 대상 프롬프트
+  const [showImageReview, setShowImageReview] = useState(true);
 
   useEffect(() => {
     if (!project) return;
@@ -1281,6 +1457,16 @@ function EditorTab({ project }) {
   };
 
   const hasChanges = content !== savedContent;
+  const imagePrompts = parseImagePrompts(content);
+
+  // 이미지 프롬프트 적용 (채팅에서 개선된 프롬프트로 교체)
+  const handleApplyPrompt = (newDesc) => {
+    if (!chatPrompt) return;
+    const oldPlaceholder = `<!-- IMAGE: ${chatPrompt} -->`;
+    const newPlaceholder = `<!-- IMAGE: ${newDesc} -->`;
+    setContent(content.replace(oldPlaceholder, newPlaceholder));
+    setChatPrompt(null);
+  };
 
   if (chapters.length === 0) {
     return (
@@ -1299,7 +1485,7 @@ function EditorTab({ project }) {
           {chapters.map((ch) => (
             <button
               key={ch.chapter_id}
-              onClick={() => loadChapter(ch.chapter_id)}
+              onClick={() => { loadChapter(ch.chapter_id); setChatPrompt(null); }}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
                 selectedId === ch.chapter_id
                   ? 'bg-emerald-50 text-emerald-700 font-medium'
@@ -1314,7 +1500,7 @@ function EditorTab({ project }) {
       </div>
 
       {/* 편집 영역 */}
-      <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200">
+      <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200 min-w-0">
         {/* 툴바 */}
         <div className="p-3 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1365,8 +1551,72 @@ function EditorTab({ project }) {
           <span>📊 {content.length.toLocaleString()}자</span>
           <span>{(content.match(/\n/g) || []).length + 1}줄</span>
           <span>{Math.floor((content.match(/```/g) || []).length / 2)} 코드블록</span>
+          {imagePrompts.length > 0 && (
+            <span className="text-purple-500">🖼️ 이미지 {imagePrompts.length}개</span>
+          )}
         </div>
+
+        {/* 이미지 프롬프트 검토 섹션 */}
+        {imagePrompts.length > 0 && showImageReview && (
+          <div className="border-t border-gray-200 max-h-48 overflow-y-auto">
+            <div className="p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-semibold text-gray-700">🖼️ 이미지 프롬프트 검토 ({imagePrompts.length}개)</h4>
+                <button onClick={() => setShowImageReview(false)} className="text-xs text-gray-400 hover:text-gray-600">접기</button>
+              </div>
+              <div className="space-y-2">
+                {imagePrompts.map((ip, idx) => {
+                  const checks = checkPromptQuality(ip.description);
+                  const hasWarning = checks.some(c => c.type === 'warning');
+                  return (
+                    <div key={idx} className={`p-2 rounded-lg border text-xs ${hasWarning ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-gray-800 font-medium flex-1 truncate" title={ip.description}>
+                          {idx + 1}. {ip.description}
+                        </p>
+                        <button
+                          onClick={() => setChatPrompt(ip.description)}
+                          className="shrink-0 px-2 py-0.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200"
+                        >
+                          AI 개선
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {checks.map((c, ci) => (
+                          <span key={ci} className={c.type === 'success' ? 'text-emerald-600' : 'text-amber-600'}>
+                            {c.type === 'success' ? '✅' : '⚠️'} {c.msg}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 이미지 없으면 숨겼던 검토 패널 복원 버튼 */}
+        {imagePrompts.length > 0 && !showImageReview && (
+          <div className="border-t border-gray-200 p-1 text-center">
+            <button onClick={() => setShowImageReview(true)} className="text-xs text-purple-500 hover:text-purple-700">
+              🖼️ 이미지 프롬프트 검토 ({imagePrompts.length}개)
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* 이미지 프롬프트 채팅 패널 (슬라이드) */}
+      {chatPrompt && (
+        <ImagePromptChat
+          project={project}
+          chapterId={selectedId}
+          imagePrompt={chatPrompt}
+          onApply={handleApplyPrompt}
+          onClose={() => setChatPrompt(null)}
+          model="claude-sonnet-4-6"
+        />
+      )}
     </div>
   );
 }

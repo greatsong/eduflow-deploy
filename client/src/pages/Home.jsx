@@ -194,17 +194,28 @@ export default function Home() {
       </section>
 
       {/* 오픈소스 안내 */}
-      <section className="text-center mb-16 space-y-2">
-        <a
-          href="https://github.com/greatsong/eduflow-js"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-emerald-600 transition-colors"
-        >
-          <span>💻</span>
-          <span className="underline underline-offset-2">에듀플로 설치버전 사용 안내</span>
-          <span className="text-xs">(내 컴퓨터에 직접 설치하기)</span>
-        </a>
+      <section className="text-center mb-16 space-y-3">
+        <div className="inline-flex flex-col sm:flex-row items-center gap-3">
+          <a
+            href="/install-guide.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-sm text-emerald-700 hover:bg-emerald-100 transition-colors font-medium"
+          >
+            <span>📖</span>
+            <span>에듀플로 설치 및 사용 가이드</span>
+          </a>
+          <a
+            href="https://github.com/greatsong/eduflow-js"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-emerald-600 transition-colors"
+          >
+            <span>⭐</span>
+            <span className="underline underline-offset-2">GitHub 바로가기</span>
+          </a>
+        </div>
+        <p className="text-xs text-gray-400">오픈소스로 공개되어 있습니다 · MIT License</p>
       </section>
 
       {/* 개발자 편지 */}

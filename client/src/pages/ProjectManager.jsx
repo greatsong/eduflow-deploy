@@ -189,6 +189,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [chapterPrompt, setChapterPrompt] = useState(draft?.chapterPrompt || '');
   const [includeHwDiagrams, setIncludeHwDiagrams] = useState(draft?.includeHwDiagrams || false);
   const [imageGenerationEnabled, setImageGenerationEnabled] = useState(draft?.imageGenerationEnabled || false);
+  const [assessmentLevel, setAssessmentLevel] = useState(draft?.assessmentLevel ?? 2);
   const [showSampleModal, setShowSampleModal] = useState(false);
   const [sampleContent, setSampleContent] = useState('');
   const [sampleTitle, setSampleTitle] = useState('');
@@ -200,6 +201,9 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [selectedHow, setSelectedHow] = useState(draft?.selectedHow || '');
   const [selectedFeatures, setSelectedFeatures] = useState(draft?.selectedFeatures || []);
   const [contextAnswers, setContextAnswers] = useState(draft?.contextAnswers || {});
+  const prevSelectedWhat = useRef(draft?.selectedWhat || '');
+  const tocPromptDirty = useRef(false);
+  const chapterPromptDirty = useRef(false);
   const [whats, setWhats] = useState([]);
   const [hows, setHows] = useState([]);
   const [features, setFeatures] = useState([]);
@@ -210,12 +214,12 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     if (!project) {
       saveDraft({
         form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor,
-        includeHwDiagrams, imageGenerationEnabled,
+        includeHwDiagrams, imageGenerationEnabled, assessmentLevel,
         templateMode, selectedWhat, selectedHow, selectedFeatures, contextAnswers,
       });
     }
   }, [form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor,
-      includeHwDiagrams, imageGenerationEnabled,
+      includeHwDiagrams, imageGenerationEnabled, assessmentLevel,
       templateMode, selectedWhat, selectedHow, selectedFeatures, contextAnswers, project]);
 
   // 클래식 템플릿 목록 로드
@@ -271,8 +275,11 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     }
     setCompatibility({ warnings });
 
-    // WHAT 변경 시 컨텍스트 답변 리셋
-    setContextAnswers({});
+    // WHAT이 실제로 변경된 경우에만 컨텍스트 답변 리셋 (HOW 변경 시에는 유지)
+    if (prevSelectedWhat.current !== selectedWhat) {
+      setContextAnswers({});
+      prevSelectedWhat.current = selectedWhat;
+    }
   }, [selectedWhat, selectedHow, whats, hows, features]);
 
   // 기존 프로젝트 선택 시 정보 로드
@@ -303,6 +310,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       setChapterPrompt(templateInfo.chapter_prompt_addition || '');
       setIncludeHwDiagrams(config.include_hw_diagrams || false);
       setImageGenerationEnabled(config.image_generation_enabled || false);
+      setAssessmentLevel(config.assessment_level ?? 2);
       if (templateInfo.template_id) setShowPromptEditor(true);
       // v2 정보 로드
       if (config.what_id) {
@@ -329,8 +337,9 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     }
     const tmpl = templates.find((t) => t.id === selectedTemplate);
     if (tmpl) {
-      setTocPrompt(tmpl.toc_prompt_addition || '');
-      setChapterPrompt(tmpl.chapter_prompt_addition || '');
+      // 사용자가 직접 수정한 프롬프트는 덮어쓰지 않음
+      if (!tocPromptDirty.current) setTocPrompt(tmpl.toc_prompt_addition || '');
+      if (!chapterPromptDirty.current) setChapterPrompt(tmpl.chapter_prompt_addition || '');
     }
   }, [selectedTemplate, templates, project, templateMode]);
 
@@ -350,6 +359,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
         image_generation_enabled: templateMode === 'v2'
           ? selectedFeatures.includes('image_generation')
           : imageGenerationEnabled,
+        assessment_level: assessmentLevel,
       };
 
       if (templateMode === 'v2' && selectedWhat && selectedHow) {
@@ -395,6 +405,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
           target_audience: form.target_audience,
           include_hw_diagrams: includeHwDiagrams,
           image_generation_enabled: imageGenerationEnabled,
+          assessment_level: assessmentLevel,
         }),
       });
       // template-info.json 업데이트
@@ -552,7 +563,12 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
                       {q.type === 'select' ? (
                         <select
                           value={contextAnswers[q.id] || ''}
-                          onChange={e => setContextAnswers({ ...contextAnswers, [q.id]: e.target.value })}
+                          onChange={e => {
+                            const scrollEl = document.querySelector('main [class*="overflow-y-auto"]');
+                            const scrollTop = scrollEl?.scrollTop ?? 0;
+                            setContextAnswers({ ...contextAnswers, [q.id]: e.target.value });
+                            requestAnimationFrame(() => { if (scrollEl) scrollEl.scrollTop = scrollTop; });
+                          }}
                           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
                         >
                           <option value="">선택하세요</option>
@@ -775,6 +791,25 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
             </label>
           </div>
 
+          {/* 평가 단계 옵션 */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">평가 방식</label>
+            <select
+              value={assessmentLevel}
+              onChange={(e) => setAssessmentLevel(Number(e.target.value))}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white w-full max-w-md"
+            >
+              <option value={0}>평가 없음 — 학습 내용만</option>
+              <option value={1}>자기점검 — 체크리스트</option>
+              <option value={2}>확인 문제 — 객관식+서술형 (기본)</option>
+              <option value={3}>형성 평가 — 난이도별 문제+자기점검</option>
+              <option value={4}>인터랙티브 — 채점+피드백+재도전</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {assessmentLevel === 4 ? '퀴즈 엔진이 MkDocs에 자동 포함됩니다' : '챕터 끝에 선택한 방식의 평가가 포함됩니다'}
+            </p>
+          </div>
+
           {/* 프롬프트 편집 토글 */}
           <div className="mb-6">
             <button
@@ -795,7 +830,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed bg-white"
                     rows={8}
                     value={tocPrompt}
-                    onChange={(e) => setTocPrompt(e.target.value)}
+                    onChange={(e) => { tocPromptDirty.current = true; setTocPrompt(e.target.value); }}
                     placeholder="목차 생성 시 AI에게 전달될 추가 지침..."
                   />
                   <p className="mt-1 text-xs text-gray-400">
@@ -810,7 +845,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed bg-white"
                     rows={8}
                     value={chapterPrompt}
-                    onChange={(e) => setChapterPrompt(e.target.value)}
+                    onChange={(e) => { chapterPromptDirty.current = true; setChapterPrompt(e.target.value); }}
                     placeholder="챕터 작성 시 AI에게 전달될 추가 지침..."
                   />
                   <p className="mt-1 text-xs text-gray-400">

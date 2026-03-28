@@ -122,11 +122,15 @@ router.post('/:step/chat', requireApiKey, requireModelAccess, asyncHandler(async
     const configFile = join(projPath, 'config.json');
     if (existsSync(configFile)) {
       const config = JSON.parse(await readFile(configFile, 'utf-8'));
-      projectInfoText = `
-# 프로젝트 기본 정보
-- 프로젝트 제목: ${config.title || ''}
-- 작성자: ${config.author || ''}
-- 설명: ${config.description || ''}`;
+      const parts = [
+        `# 프로젝트 기본 정보`,
+        `- 제목: ${config.title || ''}`,
+        config.author ? `- 작성자: ${config.author}` : null,
+        config.target_audience ? `- 대상 독자: ${config.target_audience}` : null,
+        config.description ? `- 설명: ${config.description}` : null,
+        config.pedagogical_context ? `\n## 교과 상세 정보 (사용자가 입력한 내용)\n${config.pedagogical_context}` : null,
+      ].filter(Boolean);
+      projectInfoText = '\n' + parts.join('\n');
     }
 
     // master-context.md 로드

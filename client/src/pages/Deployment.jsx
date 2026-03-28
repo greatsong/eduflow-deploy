@@ -117,47 +117,40 @@ export default function Deployment() {
 // =============================================
 // 탭 1: MkDocs 웹사이트
 // =============================================
-// 레포 이름 추천 함수
-function suggestRepoNames(projectName) {
+// 레포 이름 추천 함수 (제목 기반)
+function suggestRepoNames(projectName, title = '') {
   const sanitize = (name) =>
     name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 
   const suggestions = [];
+  const dateMatch = projectName.match(/(\d{6})/);
+  const dateStr = dateMatch ? dateMatch[1] : '';
 
-  // 1. 프로젝트 이름 그대로 (30자 이하)
-  if (projectName && projectName.length <= 30) {
-    suggestions.push(sanitize(projectName));
+  // 제목에서 영어/숫자 단어 추출
+  const engWords = (title.match(/[a-zA-Z0-9]+/g) || []).map(w => w.toLowerCase());
+  const engSlug = sanitize(engWords.join('-'));
+
+  // 1. 영어 키워드 기반
+  if (engSlug.length >= 2) {
+    suggestions.push(`${engSlug}-book`);
+    suggestions.push(`${engSlug}-guide`);
+    suggestions.push(`eduflow-${engSlug}`);
   }
 
-  // 2. 날짜 접미사 제거 (-260207 등)
-  const withoutDate = projectName.replace(/-\d{6}$/, '');
-  if (withoutDate !== projectName && withoutDate.length >= 3) {
-    suggestions.push(sanitize(withoutDate));
+  // 2. 프로젝트 이름 기반 (짧으면)
+  const base = sanitize(projectName);
+  if (base.length >= 3 && base.length <= 25) {
+    suggestions.push(base);
   }
 
-  // 3. 숫자 접미사 제거 (-000 등)
-  const withoutNum = projectName.replace(/-\d+$/, '');
-  if (withoutNum !== projectName && withoutNum !== withoutDate && withoutNum.length >= 3) {
-    suggestions.push(sanitize(withoutNum));
+  // 3. 날짜 기반 변형
+  if (dateStr) {
+    if (engSlug.length >= 2) suggestions.push(`${engSlug}-${dateStr}`);
+    suggestions.push(`${dateStr}-book`);
   }
 
-  // 4. 너무 길면 첫 2~3 세그먼트만
-  if (projectName.length > 30) {
-    const segments = projectName.split('-');
-    if (segments.length > 2) {
-      suggestions.push(sanitize(segments.slice(0, 3).join('-')));
-      suggestions.push(sanitize(segments.slice(0, 2).join('-')));
-    }
-  }
-
-  // 5. -book 또는 -course 변형
-  const base = sanitize(withoutDate.length >= 3 ? withoutDate : projectName);
-  if (base.length <= 20 && !base.includes('book') && !base.includes('course')) {
-    suggestions.push(`${base}-book`);
-  }
-
-  // 중복 제거 + 빈 문자열 제거 + 최대 3개
-  return [...new Set(suggestions)].filter(Boolean).slice(0, 3);
+  // 중복 제거 + 빈 문자열 제거 + 최대 5개
+  return [...new Set(suggestions)].filter(s => s && s.length >= 3).slice(0, 5);
 }
 
 const COLOR_THEMES = [
@@ -187,17 +180,21 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
   const deployResultRef = useRef(null);
 
   useEffect(() => {
-    // TOC에서 제목 가져오기
+    // TOC에서 제목 가져오기 → 제목 기반 레포 이름 추천
     apiFetch(`/api/projects/${project.name}/toc`)
-      .then((d) => setSiteName(d.toc?.title || '교육자료'))
-      .catch(() => setSiteName('교육자료'));
-
-    // 레포 이름 추천 생성
-    const names = suggestRepoNames(project.name);
-    setSuggestions(names);
-    if (!repoName && names.length > 0) {
-      setRepoName(names[0]);
-    }
+      .then((d) => {
+        const title = d.toc?.title || '교육자료';
+        setSiteName(title);
+        const names = suggestRepoNames(project.name, title);
+        setSuggestions(names);
+        if (!repoName && names.length > 0) setRepoName(names[0]);
+      })
+      .catch(() => {
+        setSiteName('교육자료');
+        const names = suggestRepoNames(project.name);
+        setSuggestions(names);
+        if (!repoName && names.length > 0) setRepoName(names[0]);
+      });
   }, [project]);
 
   const handleGenerateConfig = async () => {

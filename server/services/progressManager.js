@@ -122,10 +122,17 @@ export class ProgressManager {
   async getOverallStatus() {
     const progress = await this._loadProgress();
     const summary = await this.getChaptersSummary();
+    // step4: 1개 이상 챕터 완료 시
+    const step4Done = summary.completed > 0;
+    // step5: mkdocs.yml 존재 시 (빌드 완료)
+    const step5Done = existsSync(join(this.projectPath, 'mkdocs.yml'));
     return {
+      project_created: true, // 프로젝트가 존재하면 항상 true
       step1_completed: progress.step1_completed || false,
       step2_completed: progress.step2_completed || false,
       step3_confirmed: progress.step3_confirmed || false,
+      step4_completed: step4Done,
+      step5_completed: step5Done,
       chapters_completed: summary.completed,
       chapters_in_progress: summary.in_progress,
       chapters_total: summary.total,

@@ -273,4 +273,63 @@ ${currentContent.slice(0, 3000) || '(아직 작성되지 않음)'}
   }
 }));
 
+// POST /api/projects/:id/chapters/:chapterId/image-chat - 이미지 프롬프트 개선 채팅 (SSE)
+router.post('/:chapterId/image-chat', requireApiKey, requireModelAccess, asyncHandler(async (req, res) => {
+  const { message, imagePrompt, model, messages: clientMessages } = req.body;
+
+  sseHeaders(res);
+
+  try {
+    const useModel = model || 'claude-sonnet-4-6';
+    const provider = detectProvider(useModel);
+    const apiKey = resolveApiKey(provider, req.apiKeys);
+
+    const systemPrompt = `당신은 AI 이미지 생성 프롬프트 전문가이자 교육 시각 자료 컨설턴트입니다.
+
+## 현재 이미지 프롬프트
+${imagePrompt}
+
+## 역할
+1. 프롬프트의 강점과 약점을 교육적 관점에서 분석
+2. 사용자의 개선 아이디어를 반영한 구체적인 대안 제시
+3. 교육용 이미지로서의 효과를 극대화하도록 조언
+
+## 좋은 이미지 프롬프트의 조건
+- 구체적 시각 요소 (색상, 레이블, 구도)
+- 교육 목적 명시 ("~를 보여주는", "~를 비교하는")
+- 대상 학습자 수준 고려
+- 스타일 지정 (일러스트, 다이어그램, 사진 등)
+
+## 응답 형식
+개선된 프롬프트를 제안할 때는 반드시 아래 형식을 사용하세요:
+\`\`\`image-prompt
+개선된 이미지 프롬프트 내용
+\`\`\`
+
+이 형식으로 출력하면 사용자가 "적용" 버튼 한 번으로 교체할 수 있습니다.
+친근하고 구체적인 톤으로 답변하세요. 한국어로 답변하세요.`;
+
+    const result = await streamChat({
+      provider, apiKey, model: useModel,
+      messages: clientMessages || [{ role: 'user', content: message }],
+      system: systemPrompt,
+      maxTokens: 1024, res,
+    });
+
+    tokenUsage.record({
+      userId: req.user?.googleId, userName: req.user?.name,
+      userEmail: req.user?.email,
+      projectId: req.params.id, action: 'image-chat',
+      provider, model: useModel,
+      inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+      keySource: req.headers[`x-${provider}-key`] ? 'user' : 'server',
+    });
+
+    sseSend(res, { type: 'done', content: result.content });
+  } catch (e) {
+    sseSend(res, { type: 'error', message: e.message });
+  }
+  res.end();
+}));
+
 export default router;

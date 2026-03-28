@@ -128,7 +128,7 @@ export function apiSSE(path, { onText, onProgress, onError, onDone } = {}) {
 /**
  * POST 요청 후 SSE 스트리밍 (EventSource는 GET만 지원하므로 fetch 사용)
  */
-export async function apiStreamPost(path, body, { onText, onProgress, onError, onDone } = {}) {
+export async function apiStreamPost(path, body, { onText, onProgress, onError, onDone, onToc } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers: authHeaders(),
@@ -163,6 +163,7 @@ export async function apiStreamPost(path, body, { onText, onProgress, onError, o
           case 'text': onText?.(data.content); break;
           case 'progress': onProgress?.(data); break;
           case 'report': onProgress?.(data); break;
+          case 'toc': onToc?.(data.toc); break;
           case 'error': onError?.(new Error(data.message)); return;
           case 'done': onDone?.(data); return;
         }

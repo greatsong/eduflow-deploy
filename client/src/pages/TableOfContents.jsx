@@ -55,16 +55,39 @@ export default function TableOfContents() {
       .catch(() => {});
   }, []);
 
-  // 프로젝트 변경 시 TOC 로드
+  // 프로젝트 변경 시 TOC 로드 (sessionStorage 캐시 사용)
   useEffect(() => {
     if (!currentProject) return;
+    const sessionKey = `toc_${currentProject.name}`;
     apiFetch(`/api/projects/${currentProject.name}/toc`)
       .then((d) => {
-        setToc(d.toc);
-        if (d.toc) setEditJson(JSON.stringify(d.toc, null, 2));
+        if (d.toc) {
+          setToc(d.toc);
+          setEditJson(JSON.stringify(d.toc, null, 2));
+          sessionStorage.setItem(sessionKey, JSON.stringify(d.toc));
+        } else {
+          // 서버에 없으면 sessionStorage 복원 시도
+          const cached = sessionStorage.getItem(sessionKey);
+          if (cached) {
+            try { const t = JSON.parse(cached); setToc(t); setEditJson(JSON.stringify(t, null, 2)); } catch {}
+          }
+        }
       })
-      .catch(() => setToc(null));
+      .catch(() => {
+        const cached = sessionStorage.getItem(sessionKey);
+        if (cached) {
+          try { const t = JSON.parse(cached); setToc(t); setEditJson(JSON.stringify(t, null, 2)); } catch {}
+        } else {
+          setToc(null);
+        }
+      });
   }, [currentProject]);
+
+  // TOC 변경 시 sessionStorage에 저장
+  useEffect(() => {
+    if (!currentProject || !toc) return;
+    sessionStorage.setItem(`toc_${currentProject.name}`, JSON.stringify(toc));
+  }, [toc, currentProject]);
 
   // 목차 자동 생성
   const handleGenerate = async () => {
@@ -78,14 +101,15 @@ export default function TableOfContents() {
         { model },
         {
           onText: (text) => setStreamText((prev) => prev + text),
+          onToc: (tocData) => {
+            // 스트림에서 직접 TOC 수신 (재요청 불필요)
+            setToc(tocData);
+            setEditJson(JSON.stringify(tocData, null, 2));
+          },
           onDone: () => {
             setGenerating(false);
+            setStreamText(''); // 스트림 로그 숨겨서 TOC가 바로 보이도록
             refreshProgress();
-            apiFetch(`/api/projects/${currentProject.name}/toc`)
-              .then((d) => {
-                setToc(d.toc);
-                if (d.toc) setEditJson(JSON.stringify(d.toc, null, 2));
-              });
           },
           onError: (e) => {
             setStreamText((prev) => prev + `\n\n❌ 오류: ${e.message}`);

@@ -354,9 +354,12 @@ export class ChapterGenerator {
     // → 실제 잘림은 MODEL_TOKEN_LIMIT에서만 발생
     const timeCap = Math.max(6000, Math.round(charMax * 2.0));
 
-    // userMaxTokens가 0이면 시간 기반 자동 계산만 사용
-    const effectiveUserMax = userMaxTokens > 0 ? userMaxTokens : MODEL_TOKEN_LIMIT;
-    return Math.min(effectiveUserMax, timeCap, MODEL_TOKEN_LIMIT);
+    // 사용자가 명시적으로 max_tokens를 설정한 경우 → 사용자 설정 우선 (timeCap 무시)
+    // 설정하지 않은 경우(0) → 시간 기반 자동 계산 사용
+    if (userMaxTokens > 0) {
+      return Math.min(userMaxTokens, MODEL_TOKEN_LIMIT);
+    }
+    return Math.min(timeCap, MODEL_TOKEN_LIMIT);
   }
 
   // ============================================================
@@ -742,9 +745,11 @@ ${courseInfo}
     const isClassPreview = templateId === 'class-preview';
     const isAiLiteracy = templateId === 'lesson-per-session';
 
-    // 이미지 자동 생성 가이드 (활성화된 경우에만 프롬프트에 추가)
+    // 이미지 자동 생성 가이드 (v1: config, v2: features 배열)
+    const imageEnabled = this.projectConfig.image_generation_enabled
+      || (this.templateInfo.features || []).includes('image_generation');
     let imageGuide = '';
-    if (this.projectConfig.image_generation_enabled) {
+    if (imageEnabled) {
       imageGuide = `
 ## 이미지 삽입 (자동 생성)
 교재에 시각 자료가 필요한 곳에 아래 형식으로 이미지 플레이스홀더를 삽입하세요:
@@ -758,6 +763,71 @@ ${courseInfo}
 - 설명은 구체적이고 교육적 맥락이 명확해야 합니다
 - 차시당 3개 이내로 제한하세요 (생성 시간 고려)
 - Mermaid나 SVG로 충분한 다이어그램은 이미지 대신 코드로 작성하세요
+`;
+    }
+
+    // 평가 단계 가이드 (assessment_level: 0~4)
+    const assessmentLevel = this.projectConfig.assessment_level ?? 2;
+    let assessmentGuide = '';
+    if (assessmentLevel === 0) {
+      assessmentGuide = '\n## 평가\n이 챕터에는 평가 섹션을 포함하지 마세요. 학습 내용만 제공합니다.\n';
+    } else if (assessmentLevel === 1) {
+      assessmentGuide = `
+## 평가 (자기점검)
+챕터 끝에 자기점검 체크리스트만 포함하세요:
+\`\`\`markdown
+## 자기점검
+- [ ] 학습목표 1을 이해했나요?
+- [ ] 학습목표 2를 설명할 수 있나요?
+- [ ] 핵심 개념을 자신의 말로 정리할 수 있나요?
+\`\`\`
+`;
+    } else if (assessmentLevel === 2) {
+      assessmentGuide = `
+## 평가 (확인 문제)
+챕터 끝에 확인 문제를 포함하세요:
+- 객관식 2~3문제 + 서술형 1문제
+- 정답은 <details><summary>정답 확인</summary>정답 내용</details>으로 숨기세요
+`;
+    } else if (assessmentLevel === 3) {
+      assessmentGuide = `
+## 평가 (형성 평가)
+챕터 끝에 형성 평가를 포함하세요:
+- 객관식 2~3문제 (난이도 표시: ★ 기본, ★★ 심화)
+- 서술형 1~2문제
+- 정답은 <details><summary>정답 확인</summary>정답 내용</details>으로 숨기세요
+- 자기점검 체크리스트도 포함
+`;
+    } else if (assessmentLevel === 4) {
+      assessmentGuide = `
+## 평가 (인터랙티브)
+챕터 끝에 인터랙티브 퀴즈를 포함하세요. 반드시 아래 HTML 형식을 사용하세요:
+
+\`\`\`html
+<div class="ef-quiz" data-quiz-id="q1">
+  <p class="ef-quiz-question">질문 텍스트</p>
+  <div class="ef-quiz-options">
+    <label class="ef-quiz-option" data-correct="true">
+      <input type="radio" name="q1"> <span>정답 선택지</span>
+    </label>
+    <label class="ef-quiz-option">
+      <input type="radio" name="q1"> <span>오답 선택지 1</span>
+    </label>
+    <label class="ef-quiz-option">
+      <input type="radio" name="q1"> <span>오답 선택지 2</span>
+    </label>
+    <label class="ef-quiz-option">
+      <input type="radio" name="q1"> <span>오답 선택지 3</span>
+    </label>
+  </div>
+  <div class="ef-quiz-feedback" data-correct="정답 해설" data-wrong="오답 해설"></div>
+</div>
+\`\`\`
+
+- 객관식 3~4문제를 위 HTML 형식으로 작성 (data-quiz-id는 q1, q2, q3... 순서)
+- 정답 선택지에만 data-correct="true" 속성을 넣으세요
+- 각 문제의 name 속성이 고유해야 합니다 (q1, q2, q3...)
+- 서술형 1문제도 별도 추가 (일반 마크다운으로)
 `;
     }
 
@@ -775,6 +845,7 @@ ${courseInfo}
       templateAddition,
       pedagogicalContext,
       imageGuide,
+      assessmentGuide,
       outline: outline || '개요 없음',
       'pc.role': pc.role,
       'pc.audience': pc.audience,
@@ -848,9 +919,13 @@ ${courseInfo}
     // 2. 잘림(truncation) 감지 — 마지막 비공백 문자가 문장 종결 부호가 아닌 경우
     const trimmed = content.trimEnd();
     if (trimmed.length > 0) {
-      const lastChar = trimmed[trimmed.length - 1];
-      const validEndings = new Set(['.', '?', '!', ')', ']', '}', '"', "'", '`', '>', '。', '？', '！', '）', '」', '】']);
-      if (!validEndings.has(lastChar)) {
+      // 이모지(서로게이트 페어) 안전 처리: Array.from으로 코드포인트 단위 분리
+      const chars = Array.from(trimmed);
+      const lastChar = chars[chars.length - 1];
+      const validEndings = new Set(['.', '?', '!', ')', ']', '}', '"', "'", '`', '>', '。', '？', '！', '）', '」', '】', '*', '-', '|', '\n']);
+      // 유효한 종결 부호이거나, 이모지(U+2000 이상)이면 정상으로 판단
+      const isEmoji = lastChar && lastChar.codePointAt(0) > 0x2000;
+      if (!validEndings.has(lastChar) && !isEmoji) {
         errors.push(`[${chapterId}] 콘텐츠가 문장 중간에서 잘린 것으로 보입니다 (마지막 문자: '${lastChar}')`);
       }
     }
@@ -962,7 +1037,9 @@ ${courseInfo}
 
       // 이미지 플레이스홀더가 있고 이미지 생성이 활성화되어 있으면 이미지 자동 생성
       let finalContent = result.content;
-      if (this.projectConfig.image_generation_enabled) {
+      const imgEnabled = this.projectConfig.image_generation_enabled
+        || (this.templateInfo.features || []).includes('image_generation');
+      if (imgEnabled) {
         const googleApiKey = resolveApiKey('google', this.apiKeys);
         if (googleApiKey) {
           try {

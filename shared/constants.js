@@ -1,6 +1,6 @@
 // 워크플로우 스텝 정의
 export const STEPS = [
-  { id: 0, name: '프로젝트 관리', shortName: '프로젝트', icon: '📁', route: '/projects', progressKey: null },
+  { id: 0, name: '프로젝트 관리', shortName: '프로젝트', icon: '📁', route: '/projects', progressKey: 'project_created' },
   { id: 1, name: '방향성 논의', shortName: '논의', icon: '💬', route: '/discussion', progressKey: 'step1_completed' },
   { id: 2, name: '목차 작성', shortName: '목차', icon: '📋', route: '/toc', progressKey: 'step2_completed' },
   { id: 3, name: '피드백 컨펌', shortName: '피드백', icon: '✅', route: '/feedback', progressKey: 'step3_confirmed' },

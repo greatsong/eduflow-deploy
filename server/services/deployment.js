@@ -222,6 +222,21 @@ export class Deployment {
       { src: 'scroll-progress.js', dest: 'scroll-progress.js' },
     ];
 
+    // 조건부 JS: quiz-engine.js — assessment_level 4일 때만 포함
+    let needsQuizEngine = false;
+    {
+      const configPath = join(this.projectPath, 'config.json');
+      if (existsSync(configPath)) {
+        try {
+          const config = JSON.parse(await readFile(configPath, 'utf-8'));
+          if (config.assessment_level >= 4) needsQuizEngine = true;
+        } catch { /* ignore */ }
+      }
+    }
+    if (needsQuizEngine) {
+      jsFiles.push({ src: 'quiz-engine.js', dest: 'quiz-engine.js' });
+    }
+
     // 조건부 JS: circuit-diagrams.js — template-info.json의 required_assets 또는 config.include_hw_diagrams 확인
     let needsCircuitDiagrams = false;
     const templateInfoPath = join(this.projectPath, 'template-info.json');
@@ -365,7 +380,7 @@ extra_javascript:
   - javascripts/title-link.js
   - javascripts/mermaid-config.js
   - javascripts/scroll-progress.js
-${needsCircuitDiagrams ? '  - javascripts/circuit-diagrams.js\n' : ''}
+${needsCircuitDiagrams ? '  - javascripts/circuit-diagrams.js\n' : ''}${needsQuizEngine ? '  - javascripts/quiz-engine.js\n' : ''}
 extra_css:
   - stylesheets/custom.css
 
@@ -393,6 +408,19 @@ ${navYaml}`;
           }
         }
       }
+
+      // 발행 메타데이터 로드
+      const projConfigPath = join(this.projectPath, 'config.json');
+      let projConfig = {};
+      if (existsSync(projConfigPath)) {
+        try { projConfig = JSON.parse(await readFile(projConfigPath, 'utf-8')); } catch {}
+      }
+      const pub = projConfig.publishing || {};
+      const publisher = pub.publisher || creatorName || '';
+      const publishedDate = pub.published_date || new Date().toISOString().split('T')[0];
+      const pubReviewers = pub.reviewers || [];
+      const reviewerText = pubReviewers.length > 0 ? pubReviewers.join(', ') : '(미지정)';
+      const repoUrl = projConfig.repo_url || '';
 
       // 발행 정보 (하단 — 자연스러운 소형 푸터)
       const pubParts = [];
