@@ -6,19 +6,17 @@ import { apiFetch, getApiKey } from '../api/client';
 export default function Home() {
   return (
     <div className="max-w-5xl mx-auto py-8 px-4">
-      {/* 히어로 섹션 — 글래스모피즘 + 대형 비주얼 */}
+      {/* 히어로 섹션 */}
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-green-600 to-teal-600 text-white px-8 py-16 md:px-16 mb-12">
-        {/* 데코 서클 */}
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-white/10 blur-2xl" />
         <div className="absolute -bottom-16 -left-16 w-56 h-56 rounded-full bg-teal-400/20 blur-2xl" />
         <div className="absolute top-10 right-[30%] w-32 h-32 rounded-full bg-emerald-300/10 blur-xl" />
 
         <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
-          {/* 텍스트 */}
           <div className="flex-1 text-center md:text-left">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 backdrop-blur rounded-full text-xs font-medium mb-5 border border-white/20">
               <span className="w-2 h-2 bg-emerald-300 rounded-full animate-pulse" />
-              v0.3 — Multi-AI · 사용자 관리 · 포트폴리오
+              v0.3 — Multi-AI · 2축 템플릿 · 오픈소스
             </div>
             <h1 className="text-4xl md:text-5xl font-extrabold leading-tight mb-4 tracking-tight">
               에듀플로
@@ -43,12 +41,11 @@ export default function Home() {
                 to="/compare"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white/10 backdrop-blur text-white rounded-xl font-medium text-sm border border-white/20 hover:bg-white/20 transition-all"
               >
-                🤖 모델 비교하기
+                AI 모델 비교
               </Link>
             </div>
           </div>
 
-          {/* 로고 + 플로팅 카드 비주얼 */}
           <div className="relative shrink-0 hidden md:block">
             <div className="relative">
               <div className="absolute inset-0 bg-white/10 rounded-3xl blur-xl scale-110" />
@@ -56,7 +53,6 @@ export default function Home() {
                 <Logo size={120} />
               </div>
             </div>
-            {/* 플로팅 미니 카드 */}
             <div className="absolute -bottom-4 -left-8 bg-white rounded-xl shadow-xl px-3 py-2 text-xs font-medium text-gray-700 animate-[float_3s_ease-in-out_infinite]">
               💬 AI 대화형 생성
             </div>
@@ -67,11 +63,38 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 워크플로우 단계 카드 */}
+      {/* 핵심 가치 — 헌법에서 추출한 3가지 핵심 */}
+      <section className="mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-lg transition-all">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-xl mb-4">👩‍🏫</div>
+            <h3 className="font-bold text-gray-900 mb-2">교사가 창작자</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              AI는 제안하고, 선생님이 결정합니다. 모든 단계에서 수정, 거부, 재생성할 수 있습니다.
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-lg transition-all">
+            <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center text-xl mb-4">🔄</div>
+            <h3 className="font-bold text-gray-900 mb-2">끊기지 않는 흐름</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              아이디어부터 학생 손에 닿는 교재까지. 구상 → 구조화 → 생성 → 배포, 중간에 끊기지 않습니다.
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-lg transition-all">
+            <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center text-xl mb-4">💬</div>
+            <h3 className="font-bold text-gray-900 mb-2">대화형 협력</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              일방적 생성이 아니라, AI와의 대화를 통해 선생님의 교육 철학을 교재에 녹여냅니다.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 6단계 워크플로우 */}
       <section className="mb-12">
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">6단계 워크플로우</h2>
-          <p className="text-sm text-gray-500">아이디어부터 배포까지, AI가 모든 과정을 도와드립니다</p>
+          <p className="text-sm text-gray-500">아이디어부터 배포까지, 물 흐르듯 이어집니다</p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -80,7 +103,7 @@ export default function Home() {
             { step: 2, icon: '📋', title: '목차 작성', desc: '체계적 구조 자동 생성', color: 'from-green-500 to-green-600' },
             { step: 3, icon: '✅', title: '피드백', desc: '목차 검토 및 확정', color: 'from-teal-500 to-teal-600' },
             { step: 4, icon: '✍️', title: '챕터 제작', desc: '배치/개별 자동 작성', color: 'from-cyan-500 to-cyan-600' },
-            { step: 5, icon: '🚀', title: '배포', desc: 'MkDocs/DOCX 배포', color: 'from-sky-500 to-sky-600' },
+            { step: 5, icon: '🚀', title: '배포', desc: 'MkDocs · DOCX · 웹', color: 'from-sky-500 to-sky-600' },
             { step: 6, icon: '📊', title: '포트폴리오', desc: '완성된 교재 모아보기', color: 'from-violet-500 to-violet-600' },
           ].map((item) => (
             <div key={item.step} className="group relative overflow-hidden bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default">
@@ -98,11 +121,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 핵심 기능 하이라이트 — 벤토 그리드 */}
+      {/* 핵심 기능 — 벤토 그리드 */}
       <section className="mb-12">
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">주요 기능</h2>
-          <p className="text-sm text-gray-500">교육자료 제작에 필요한 모든 것</p>
+          <p className="text-sm text-gray-500">어떤 교과든, 어떤 형식이든</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -114,7 +137,7 @@ export default function Home() {
               <h3 className="text-lg font-bold mb-2">멀티 AI 프로바이더</h3>
               <p className="text-gray-300 text-sm leading-relaxed mb-4">
                 Claude, GPT, Gemini, Solar — 4개 AI를 자유롭게 선택하고 비교하세요.
-                블라인드 테스트와 AI 자동 평가로 최적의 모델을 찾을 수 있습니다.
+                특정 AI에 종속되지 않는 열린 구조입니다.
               </p>
               <MultiAIBanner />
             </div>
@@ -123,15 +146,39 @@ export default function Home() {
           {/* 소형 카드들 */}
           <div className="space-y-4">
             <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl p-5 border border-emerald-100">
-              <span className="text-2xl mb-2 block">📚</span>
-              <h3 className="font-bold text-gray-900 text-sm mb-1">8종 교육 템플릿</h3>
-              <p className="text-xs text-gray-600 leading-relaxed">학교 교과서, 프로그래밍 과정, 워크숍 등 다양한 템플릿으로 빠르게 시작</p>
+              <span className="text-2xl mb-2 block">📐</span>
+              <h3 className="font-bold text-gray-900 text-sm mb-1">2축 템플릿 시스템</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">교과 전문성(WHAT) × 교육 모델(HOW) + 기능 옵션을 자유롭게 조합</p>
             </div>
             <div className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl p-5 border border-teal-100">
               <span className="text-2xl mb-2 block">🌐</span>
               <h3 className="font-bold text-gray-900 text-sm mb-1">원클릭 웹 배포</h3>
-              <p className="text-xs text-gray-600 leading-relaxed">MkDocs + GitHub Pages로 아름다운 교재 사이트를 즉시 배포</p>
+              <p className="text-xs text-gray-600 leading-relaxed">MkDocs + GitHub Pages로 교재 사이트를 즉시 배포. 교사 컴퓨터에만 머무르지 않습니다.</p>
             </div>
+          </div>
+        </div>
+
+        {/* 추가 기능 카드 */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+          <div className="bg-white rounded-xl border border-gray-100 p-4 text-center hover:shadow-md transition-all">
+            <span className="text-xl block mb-2">📎</span>
+            <h4 className="font-bold text-gray-900 text-xs mb-1">참고자료 업로드</h4>
+            <p className="text-[10px] text-gray-400">PDF · DOCX · HWP · 복붙</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-4 text-center hover:shadow-md transition-all">
+            <span className="text-xl block mb-2">📊</span>
+            <h4 className="font-bold text-gray-900 text-xs mb-1">시각화</h4>
+            <p className="text-[10px] text-gray-400">Mermaid · KaTeX · SVG</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-4 text-center hover:shadow-md transition-all">
+            <span className="text-xl block mb-2">👥</span>
+            <h4 className="font-bold text-gray-900 text-xs mb-1">사용자 관리</h4>
+            <p className="text-[10px] text-gray-400">가입 승인 · 역할 · 통계</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-4 text-center hover:shadow-md transition-all">
+            <span className="text-xl block mb-2">📖</span>
+            <h4 className="font-bold text-gray-900 text-xs mb-1">포트폴리오</h4>
+            <p className="text-[10px] text-gray-400">완성된 교재 모아보기</p>
           </div>
         </div>
       </section>
@@ -146,8 +193,8 @@ export default function Home() {
         </Link>
       </section>
 
-      {/* 설치 버전 안내 */}
-      <section className="text-center mb-16">
+      {/* 오픈소스 안내 */}
+      <section className="text-center mb-16 space-y-2">
         <a
           href="https://github.com/greatsong/eduflow-js"
           target="_blank"
@@ -282,9 +329,9 @@ function DeveloperLetter() {
             <strong className="text-gray-800"> AI로 풀 수 있는 가치있는 문제</strong>를 찾고 해결하고 있습니다!
           </p>
           <p className="text-gray-600 text-sm mb-3 leading-relaxed">
-            이번 프로젝트에서는 선생님들께서 수업 아이디어를 구상할 때 도움이 되고,
-            또 완성된 아이디어가 마음에 들 경우 웹으로 바로 배포할 수 있는
-            <strong className="text-gray-800"> 수업 자료 개발 및 배포 자동화 시스템, 에듀플로(EduFlow)</strong>를 만들어보았습니다!
+            에듀플로는 선생님의 수업 아이디어를 AI와 대화하며 구체화하고,
+            완성된 교재를 웹으로 바로 배포할 수 있는
+            <strong className="text-gray-800"> 오픈소스 교육자료 생성 플랫폼</strong>입니다.
           </p>
           <p className="text-gray-600 text-sm mb-4 leading-relaxed">
             사용해보시고 피드백 주시면 적극 반영하겠습니다!
