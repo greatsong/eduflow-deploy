@@ -312,13 +312,13 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       setImageGenerationEnabled(config.image_generation_enabled || false);
       setAssessmentLevel(config.assessment_level ?? 2);
       if (templateInfo.template_id) setShowPromptEditor(true);
-      // v2 정보 로드
-      if (config.what_id) {
+      // v2 정보 로드 (template-info.json에 저장됨)
+      if (templateInfo.what_id) {
         setTemplateMode('v2');
-        setSelectedWhat(config.what_id || '');
-        setSelectedHow(config.how_id || '');
-        setSelectedFeatures(config.features || []);
-        setContextAnswers(config.context_answers || {});
+        setSelectedWhat(templateInfo.what_id || '');
+        setSelectedHow(templateInfo.how_id || '');
+        setSelectedFeatures(templateInfo.features || []);
+        setContextAnswers(templateInfo.context_answers || {});
       } else if (templateInfo.template_id) {
         setTemplateMode('classic');
       }
@@ -656,8 +656,18 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
                       const isForbidden = forbidden.has(f.id);
                       const isChecked = selectedFeatures.includes(f.id);
                       return (
-                        <label
+                        <button
                           key={f.id}
+                          type="button"
+                          disabled={isForbidden}
+                          onClick={() => {
+                            if (isForbidden) return;
+                            setSelectedFeatures(prev =>
+                              prev.includes(f.id)
+                                ? prev.filter(id => id !== f.id)
+                                : [...prev, f.id]
+                            );
+                          }}
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors ${
                             isForbidden
                               ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
@@ -666,24 +676,10 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
                                 : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
                           }`}
                         >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            disabled={isForbidden}
-                            onChange={() => {
-                              if (isForbidden) return;
-                              setSelectedFeatures(prev =>
-                                prev.includes(f.id)
-                                  ? prev.filter(id => id !== f.id)
-                                  : [...prev, f.id]
-                              );
-                            }}
-                            className="sr-only"
-                          />
                           <span>{f.icon}</span>
                           <span>{f.name}</span>
                           {isForbidden && <span className="text-xs text-gray-400">(비호환)</span>}
-                        </label>
+                        </button>
                       );
                     })}
                   </div>
