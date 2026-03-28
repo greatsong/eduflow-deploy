@@ -394,14 +394,15 @@ ${navYaml}`;
         }
       }
 
-      // 제작자 정보
-      if (creatorName || creatorAffiliation) {
-        indexContent += '\n---\n\n';
-        indexContent += '!!! info "제작 정보"\n';
-        if (creatorName) indexContent += `    **제작자**: ${creatorName}\n`;
-        if (creatorAffiliation) indexContent += `    **소속**: ${creatorAffiliation}\n`;
-        indexContent += `    **도구**: [EduFlow](https://eduflow-greatsong.fly.dev/) — AI 교육자료 생성 플랫폼\n`;
-      }
+      // 발행 정보 (하단)
+      indexContent += '\n---\n\n';
+      indexContent += '!!! info "발행 정보"\n';
+      if (publisher) indexContent += `    **발행인**: ${publisher}\n`;
+      if (creatorAffiliation) indexContent += `    **소속**: ${creatorAffiliation}\n`;
+      indexContent += `    **발행일**: ${publishedDate}\n`;
+      indexContent += `    **검토**: ${reviewerText}\n`;
+      if (repoUrl) indexContent += `    **GitHub**: [소스 보기 / 수정 제안](${repoUrl})\n`;
+      indexContent += `    **도구**: [EduFlow](https://eduflow-greatsong.fly.dev/) — AI 교육자료 생성 플랫폼\n`;
 
       await writeFile(indexPath, indexContent, 'utf-8');
     }
@@ -655,15 +656,24 @@ ${navYaml}`;
       }
       const projTitle = projConfig.title || repoName;
       const projDesc = projConfig.description || '';
+      const pub = projConfig.publishing || {};
+      const pubName = pub.publisher || creator?.name || '';
+      const pubDate = pub.published_date || new Date().toISOString().split('T')[0];
+      const pubReviewers = pub.reviewers || [];
+
       let readme = `# ${projTitle}\n\n`;
       if (projDesc) readme += `${projDesc}\n\n`;
-      if (creator?.name || creator?.affiliation) {
-        readme += `## 제작 정보\n\n`;
-        if (creator.name) readme += `- **제작자**: ${creator.name}\n`;
-        if (creator.affiliation) readme += `- **소속**: ${creator.affiliation}\n`;
-        readme += `- **도구**: [EduFlow](https://eduflow-greatsong.fly.dev/) — AI 교육자료 생성 플랫폼\n`;
-        readme += `- **생성일**: ${new Date().toLocaleDateString('ko-KR')}\n`;
-      }
+      readme += `## 발행 정보\n\n`;
+      if (pubName) readme += `- **발행인**: ${pubName}\n`;
+      if (creator?.affiliation) readme += `- **소속**: ${creator.affiliation}\n`;
+      readme += `- **발행일**: ${pubDate}\n`;
+      readme += `- **검토**: ${pubReviewers.length > 0 ? pubReviewers.join(', ') : '미검토'}\n`;
+      readme += `- **도구**: [EduFlow](https://eduflow-greatsong.fly.dev/) — AI 교육자료 생성 플랫폼\n`;
+      readme += `\n## 수정 안내\n\n`;
+      readme += `이 교재는 GitHub에서 직접 수정할 수 있습니다.\n\n`;
+      readme += `1. \`docs/\` 폴더에서 마크다운 파일을 편집하세요\n`;
+      readme += `2. 수정 후 커밋하면 GitHub Pages가 자동으로 업데이트됩니다\n`;
+      readme += `3. 검토 완료 후 README.md의 검토 항목을 업데이트하세요\n`;
       readme += `\n---\n\n> 이 교육자료는 [EduFlow](https://eduflow-greatsong.fly.dev/)를 사용하여 제작되었습니다.\n`;
       await writeFile(readmePath, readme, 'utf-8');
 

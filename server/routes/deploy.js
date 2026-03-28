@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { join, dirname } from 'path';
 import { createReadStream, existsSync } from 'fs';
-import { stat } from 'fs/promises';
+import { stat, readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { Deployment } from '../services/deployment.js';
@@ -43,15 +43,29 @@ router.get('/status', asyncHandler(async (req, res) => {
 
 // POST /api/projects/:id/deploy/mkdocs/config - MkDocs 설정 생성
 router.post('/mkdocs/config', asyncHandler(async (req, res) => {
-  const { siteName, theme, colorTheme, creator } = req.body;
+  const { siteName, theme, colorTheme, creator, publishing, repoUrl } = req.body;
   const dep = new Deployment(projectPath(req.params.id));
   await dep.init();
+
+  // config.json에서 publishing 정보 로드 (요청에 없으면)
+  let pubInfo = publishing || null;
+  if (!pubInfo) {
+    const configFile = join(projectPath(req.params.id), 'config.json');
+    if (existsSync(configFile)) {
+      try {
+        const config = JSON.parse(await readFile(configFile, 'utf-8'));
+        pubInfo = config.publishing || null;
+      } catch { /* skip */ }
+    }
+  }
 
   const result = await dep.generateMkdocsConfig(
     siteName || '교육자료',
     theme || 'material',
     creator || null,
-    colorTheme || 'indigo'
+    colorTheme || 'indigo',
+    pubInfo,
+    repoUrl || null
   );
   res.json(result);
 }));

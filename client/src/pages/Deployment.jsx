@@ -538,18 +538,36 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
               {deployResult && (
                 <div ref={deployResultRef} className={`mt-4 p-4 rounded-xl border-2 ${deployResult.success ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`}>
                   {deployResult.success ? (
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold text-green-800">✅ 배포 완료!</p>
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="font-semibold text-green-800">✅ 배포 완료!</p>
+                          <a href={deployResult.site_url} target="_blank" rel="noopener noreferrer"
+                            className="text-green-700 underline font-medium text-sm">
+                            🌐 {deployResult.site_url}
+                          </a>
+                        </div>
                         <a href={deployResult.site_url} target="_blank" rel="noopener noreferrer"
-                          className="text-green-700 underline font-medium text-sm">
-                          🌐 {deployResult.site_url}
+                          className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 whitespace-nowrap">
+                          사이트 열기 →
                         </a>
                       </div>
-                      <a href={deployResult.site_url} target="_blank" rel="noopener noreferrer"
-                        className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 whitespace-nowrap">
-                        사이트 열기 →
-                      </a>
+                      {/* 배포 후 수정 안내 */}
+                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-sm font-semibold text-blue-800 mb-2">📝 배포 후 수정 방법</p>
+                        <ul className="text-xs text-blue-700 space-y-1.5">
+                          <li><strong>GitHub에서 직접 수정</strong>: 저장소의 <code>docs/</code> 폴더에서 마크다운 파일을 편집하면 사이트가 자동 업데이트됩니다.</li>
+                          <li><strong>에듀플로에서 수정</strong>: Step 4에서 챕터를 수정한 뒤 다시 배포하세요.</li>
+                          <li><strong>검토자 추가</strong>: GitHub 저장소의 README.md에서 검토 항목을 업데이트하세요.</li>
+                        </ul>
+                        {deployResult.repo_url && (
+                          <a href={deployResult.repo_url} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium">
+                            <GitHubIcon className="w-3.5 h-3.5" />
+                            GitHub 저장소 열기 →
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <div>
