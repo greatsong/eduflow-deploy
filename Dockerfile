@@ -28,8 +28,7 @@ RUN npm install
 
 # 소스 복사 + 빌드
 COPY . .
-# 캐시 버스터: 2026-03-28-v2
-RUN npm run build
+RUN rm -rf client/dist && npm run build
 
 EXPOSE 7829
 
