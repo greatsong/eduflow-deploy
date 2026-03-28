@@ -67,7 +67,7 @@ export default function Layout() {
               <h1 className="text-lg font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
                 에듀플로
               </h1>
-              <p className="text-xs text-gray-400">AI와 함께 만드는 교육자료</p>
+              <p className="text-xs text-gray-400">선생님과 AI가 함께 만드는 오픈소스 교육자료 플랫폼</p>
             </div>
           </div>
         </Link>
