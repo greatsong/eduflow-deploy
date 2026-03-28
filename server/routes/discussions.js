@@ -139,15 +139,19 @@ router.post('/:step/chat', requireApiKey, requireModelAccess, asyncHandler(async
       }
     }
 
-    // 참고자료 로드
+    // 참고자료 로드 (PDF, DOCX, XLSX, HWP 등 모든 포맷 지원)
     let referencesText = '';
     const refManager = new ReferenceManager(projPath);
     const refs = await refManager.listFiles();
     if (refs.length > 0) {
       const refContents = [];
       for (const ref of refs) {
-        const content = await refManager.readFile(ref.name);
-        if (content) refContents.push(`[${ref.name}]\n${content}`);
+        try {
+          const result = await refManager.readFileContent(ref.name);
+          if (result.status === 'ok' && result.content) {
+            refContents.push(`[${ref.name}]\n${result.content}`);
+          }
+        } catch { /* skip */ }
       }
       if (refContents.length) {
         referencesText = '\n\n# 업로드된 참고자료\n\n' + refContents.join('\n\n---\n\n');

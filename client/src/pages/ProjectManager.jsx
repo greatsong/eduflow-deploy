@@ -194,17 +194,86 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [sampleTitle, setSampleTitle] = useState('');
   const [sampleLoading, setSampleLoading] = useState(false);
 
+  // v2 템플릿 설계 상태
+  const [templateMode, setTemplateMode] = useState(draft?.templateMode || 'v2');
+  const [selectedWhat, setSelectedWhat] = useState(draft?.selectedWhat || '');
+  const [selectedHow, setSelectedHow] = useState(draft?.selectedHow || '');
+  const [selectedFeatures, setSelectedFeatures] = useState(draft?.selectedFeatures || []);
+  const [contextAnswers, setContextAnswers] = useState(draft?.contextAnswers || {});
+  const [whats, setWhats] = useState([]);
+  const [hows, setHows] = useState([]);
+  const [features, setFeatures] = useState([]);
+  const [compatibility, setCompatibility] = useState({ warnings: [] });
+
   // 새 프로젝트 폼 변경 시 자동 임시저장
   useEffect(() => {
     if (!project) {
-      saveDraft({ form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor, includeHwDiagrams, imageGenerationEnabled });
+      saveDraft({
+        form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor,
+        includeHwDiagrams, imageGenerationEnabled,
+        templateMode, selectedWhat, selectedHow, selectedFeatures, contextAnswers,
+      });
     }
-  }, [form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor, includeHwDiagrams, imageGenerationEnabled, project]);
+  }, [form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor,
+      includeHwDiagrams, imageGenerationEnabled,
+      templateMode, selectedWhat, selectedHow, selectedFeatures, contextAnswers, project]);
 
-  // 템플릿 목록 로드
+  // 클래식 템플릿 목록 로드
   useEffect(() => {
     apiFetch('/api/projects/templates/list').then(setTemplates).catch(() => {});
   }, []);
+
+  // v2 템플릿 목록 로드
+  useEffect(() => {
+    Promise.all([
+      apiFetch('/api/projects/templates/whats').catch(() => []),
+      apiFetch('/api/projects/templates/hows').catch(() => []),
+      apiFetch('/api/projects/templates/features').catch(() => []),
+    ]).then(([w, h, f]) => {
+      setWhats(Array.isArray(w) ? w : []);
+      setHows(Array.isArray(h) ? h : []);
+      setFeatures(Array.isArray(f) ? f : []);
+    });
+  }, []);
+
+  // WHAT 또는 HOW 변경 시 기본 기능 자동 선택 + 호환성 체크
+  useEffect(() => {
+    if (!selectedWhat || !selectedHow) {
+      setCompatibility({ warnings: [] });
+      return;
+    }
+    const what = whats.find(w => w.id === selectedWhat);
+    const how = hows.find(h => h.id === selectedHow);
+    if (!what || !how) return;
+
+    // 기본 기능 자동 선택
+    const defaults = [...new Set([...(what.default_features || []), ...(how.default_features || [])])];
+    const forbidden = new Set([...(what.forbidden_features || []), ...(how.forbidden_features || [])]);
+    setSelectedFeatures(defaults.filter(f => !forbidden.has(f)));
+
+    // 호환성 경고 생성
+    const warnings = [];
+    const whatForbidden = what.forbidden_features || [];
+    const howForbidden = how.forbidden_features || [];
+    const howDefaults = how.default_features || [];
+    const whatDefaults = what.default_features || [];
+    for (const fId of whatDefaults) {
+      if (howForbidden.includes(fId)) {
+        const feat = features.find(f => f.id === fId);
+        if (feat) warnings.push(`"${what.name}"의 기본 기능 "${feat.name}"은(는) "${how.name}" 모델과 호환되지 않아 비활성화됩니다.`);
+      }
+    }
+    for (const fId of howDefaults) {
+      if (whatForbidden.includes(fId)) {
+        const feat = features.find(f => f.id === fId);
+        if (feat) warnings.push(`"${how.name}"의 기본 기능 "${feat.name}"은(는) "${what.name}" 교과와 호환되지 않아 비활성화됩니다.`);
+      }
+    }
+    setCompatibility({ warnings });
+
+    // WHAT 변경 시 컨텍스트 답변 리셋
+    setContextAnswers({});
+  }, [selectedWhat, selectedHow, whats, hows, features]);
 
   // 기존 프로젝트 선택 시 정보 로드
   useEffect(() => {
@@ -235,12 +304,23 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       setIncludeHwDiagrams(config.include_hw_diagrams || false);
       setImageGenerationEnabled(config.image_generation_enabled || false);
       if (templateInfo.template_id) setShowPromptEditor(true);
+      // v2 정보 로드
+      if (config.what_id) {
+        setTemplateMode('v2');
+        setSelectedWhat(config.what_id || '');
+        setSelectedHow(config.how_id || '');
+        setSelectedFeatures(config.features || []);
+        setContextAnswers(config.context_answers || {});
+      } else if (templateInfo.template_id) {
+        setTemplateMode('classic');
+      }
     }).finally(() => setLoading(false));
   }, [project]);
 
-  // 템플릿 선택 시 프롬프트 로드 (새 프로젝트 모드에서만)
+  // 클래식 모드: 템플릿 선택 시 프롬프트 로드 (새 프로젝트 모드에서만)
   useEffect(() => {
     if (project) return; // 기존 프로젝트면 무시
+    if (templateMode !== 'classic') return;
     if (!selectedTemplate) {
       setTocPrompt('');
       setChapterPrompt('');
@@ -252,7 +332,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       setTocPrompt(tmpl.toc_prompt_addition || '');
       setChapterPrompt(tmpl.chapter_prompt_addition || '');
     }
-  }, [selectedTemplate, templates, project]);
+  }, [selectedTemplate, templates, project, templateMode]);
 
   const handleCreate = async () => {
     if (!form.name || !form.title) {
@@ -264,14 +344,27 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     try {
       const body = {
         ...form,
-        template_id: selectedTemplate || undefined,
-        include_hw_diagrams: includeHwDiagrams,
-        image_generation_enabled: imageGenerationEnabled,
-        custom_prompt_config: selectedTemplate ? {
+        include_hw_diagrams: templateMode === 'v2'
+          ? selectedFeatures.includes('hw_diagrams')
+          : includeHwDiagrams,
+        image_generation_enabled: templateMode === 'v2'
+          ? selectedFeatures.includes('image_generation')
+          : imageGenerationEnabled,
+      };
+
+      if (templateMode === 'v2' && selectedWhat && selectedHow) {
+        body.what_id = selectedWhat;
+        body.how_id = selectedHow;
+        body.features = selectedFeatures;
+        body.context_answers = contextAnswers;
+      } else if (templateMode === 'classic' && selectedTemplate) {
+        body.template_id = selectedTemplate;
+        body.custom_prompt_config = {
           toc_prompt_addition: tocPrompt,
           chapter_prompt_addition: chapterPrompt,
-        } : undefined,
-      };
+        };
+      }
+
       await apiFetch('/api/projects', { method: 'POST', body: JSON.stringify(body) });
       clearDraft(); // 생성 완료 후 임시저장 삭제
       await onCreated();
@@ -391,79 +484,346 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
         />
       </div>
 
-      {/* 템플릿 선택 */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">템플릿</label>
-        <div className="flex gap-2">
-          <select
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-            value={selectedTemplate}
-            onChange={(e) => setSelectedTemplate(e.target.value)}
-          >
-            <option value="">없음 (직접 설정)</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
-            ))}
-          </select>
-          {selectedTemplate && (
-            <button
-              type="button"
-              onClick={handleShowSample}
-              disabled={sampleLoading}
-              className="px-3 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50 transition-colors whitespace-nowrap"
-            >
-              {sampleLoading ? '로딩...' : '샘플 미리보기'}
-            </button>
+      {/* 템플릿 모드 토글 */}
+      <div className="flex items-center gap-2 mb-6">
+        <button
+          type="button"
+          onClick={() => setTemplateMode('v2')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            templateMode === 'v2'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          교재 설계 (신규)
+        </button>
+        <button
+          type="button"
+          onClick={() => setTemplateMode('classic')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            templateMode === 'classic'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          클래식 모드
+        </button>
+      </div>
+
+      {templateMode === 'v2' ? (
+        <div className="space-y-6 mb-6">
+          {/* STEP 1: 교과 전문성 */}
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">1</span>
+              교과 전문성
+            </h4>
+            <p className="text-sm text-gray-500 mb-3">무엇을 가르치나요?</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {whats.map(w => (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => setSelectedWhat(w.id)}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center ${
+                    selectedWhat === w.id
+                      ? 'border-emerald-500 bg-emerald-50 shadow-sm'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="text-2xl">{w.icon}</span>
+                  <span className="text-sm font-medium text-gray-800">{w.name}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* 교과 컨텍스트 질문 */}
+            {selectedWhat && (() => {
+              const what = whats.find(w => w.id === selectedWhat);
+              if (!what?.context_questions?.length) return null;
+              return (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+                  <h5 className="text-sm font-medium text-gray-700">교과 세부 설정</h5>
+                  {what.context_questions.map(q => (
+                    <div key={q.id}>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">
+                        {q.label} {q.required && <span className="text-red-500">*</span>}
+                      </label>
+                      {q.type === 'select' ? (
+                        <select
+                          value={contextAnswers[q.id] || ''}
+                          onChange={e => setContextAnswers({ ...contextAnswers, [q.id]: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                        >
+                          <option value="">선택하세요</option>
+                          {(q.options || []).map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : q.type === 'textarea' ? (
+                        <textarea
+                          value={contextAnswers[q.id] || ''}
+                          onChange={e => setContextAnswers({ ...contextAnswers, [q.id]: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          rows={3}
+                          placeholder={q.placeholder || ''}
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={contextAnswers[q.id] || ''}
+                          onChange={e => setContextAnswers({ ...contextAnswers, [q.id]: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          placeholder={q.placeholder || ''}
+                        />
+                      )}
+                      {q.help && <p className="text-xs text-gray-400 mt-1">{q.help}</p>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* STEP 2: 교육 모델 */}
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">2</span>
+              교육 모델
+            </h4>
+            <p className="text-sm text-gray-500 mb-3">어떤 형태로 만드나요?</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {hows.map(h => (
+                <button
+                  key={h.id}
+                  type="button"
+                  onClick={() => setSelectedHow(h.id)}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center ${
+                    selectedHow === h.id
+                      ? 'border-emerald-500 bg-emerald-50 shadow-sm'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="text-2xl">{h.icon}</span>
+                  <span className="text-sm font-medium text-gray-800">{h.name}</span>
+                  {h.educational_model && (
+                    <span className="text-xs text-gray-400">{h.educational_model}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* STEP 3: 기능 옵션 */}
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">3</span>
+              기능 옵션
+            </h4>
+            <p className="text-sm text-gray-500 mb-3">어떤 도구를 사용하나요?</p>
+
+            {/* 카테고리별 그룹 */}
+            {[...new Set(features.map(f => f.category))].map(cat => {
+              const catFeatures = features.filter(f => f.category === cat);
+              if (catFeatures.length === 0) return null;
+              const whatObj = whats.find(w => w.id === selectedWhat);
+              const howObj = hows.find(h => h.id === selectedHow);
+              const forbidden = new Set([
+                ...(whatObj?.forbidden_features || []),
+                ...(howObj?.forbidden_features || []),
+              ]);
+              return (
+                <div key={cat} className="mb-3">
+                  <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">{cat}</span>
+                  <div className="flex flex-wrap gap-2 mt-1.5">
+                    {catFeatures.map(f => {
+                      const isForbidden = forbidden.has(f.id);
+                      const isChecked = selectedFeatures.includes(f.id);
+                      return (
+                        <label
+                          key={f.id}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors ${
+                            isForbidden
+                              ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
+                              : isChecked
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={isForbidden}
+                            onChange={() => {
+                              if (isForbidden) return;
+                              setSelectedFeatures(prev =>
+                                prev.includes(f.id)
+                                  ? prev.filter(id => id !== f.id)
+                                  : [...prev, f.id]
+                              );
+                            }}
+                            className="sr-only"
+                          />
+                          <span>{f.icon}</span>
+                          <span>{f.name}</span>
+                          {isForbidden && <span className="text-xs text-gray-400">(비호환)</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* 호환성 경고 */}
+            {compatibility.warnings.length > 0 && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 space-y-1">
+                {compatibility.warnings.map((w, i) => (
+                  <p key={i}>&#9888;&#65039; {w}</p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* v2 선택 요약 */}
+          {selectedWhat && selectedHow && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+              <span className="font-medium">설계 요약:</span>{' '}
+              {whats.find(w => w.id === selectedWhat)?.icon}{' '}
+              {whats.find(w => w.id === selectedWhat)?.name}{' + '}
+              {hows.find(h => h.id === selectedHow)?.icon}{' '}
+              {hows.find(h => h.id === selectedHow)?.name}
+              {selectedFeatures.length > 0 && (
+                <span className="text-emerald-600">
+                  {' '}({selectedFeatures.length}개 기능 선택)
+                </span>
+              )}
+            </div>
           )}
         </div>
-        {selectedTemplate && (
-          <p className="mt-1 text-xs text-gray-500">
-            {templates.find((t) => t.id === selectedTemplate)?.description}
-          </p>
-        )}
-      </div>
+      ) : (
+        <>
+          {/* 클래식 모드: 기존 템플릿 선택 */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">템플릿</label>
+            <div className="flex gap-2">
+              <select
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
+              >
+                <option value="">없음 (직접 설정)</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
+                ))}
+              </select>
+              {selectedTemplate && (
+                <button
+                  type="button"
+                  onClick={handleShowSample}
+                  disabled={sampleLoading}
+                  className="px-3 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50 transition-colors whitespace-nowrap"
+                >
+                  {sampleLoading ? '로딩...' : '샘플 미리보기'}
+                </button>
+              )}
+            </div>
+            {selectedTemplate && (
+              <p className="mt-1 text-xs text-gray-500">
+                {templates.find((t) => t.id === selectedTemplate)?.description}
+              </p>
+            )}
+          </div>
 
-      {/* 회로도 포함 옵션 */}
-      <div className="mb-4">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <div className="relative">
-            <input
-              type="checkbox"
-              checked={includeHwDiagrams}
-              onChange={(e) => setIncludeHwDiagrams(e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
-            <div className="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
+          {/* 회로도 포함 옵션 */}
+          <div className="mb-4">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={includeHwDiagrams}
+                  onChange={(e) => setIncludeHwDiagrams(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
+                <div className="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
+              </div>
+              <div>
+                <span className="text-sm font-medium text-gray-700">인터랙티브 회로도 포함</span>
+                <p className="text-xs text-gray-500">Pico 핀배치, 회로 연결도, 센서 모듈 다이어그램을 자동 생성합니다</p>
+              </div>
+            </label>
           </div>
-          <div>
-            <span className="text-sm font-medium text-gray-700">인터랙티브 회로도 포함</span>
-            <p className="text-xs text-gray-500">Pico 핀배치, 회로 연결도, 센서 모듈 다이어그램을 자동 생성합니다</p>
-          </div>
-        </label>
-      </div>
 
-      {/* 이미지 자동 생성 옵션 */}
-      <div className="mb-4">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <div className="relative">
-            <input
-              type="checkbox"
-              checked={imageGenerationEnabled}
-              onChange={(e) => setImageGenerationEnabled(e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
-            <div className="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
+          {/* 이미지 자동 생성 옵션 */}
+          <div className="mb-4">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={imageGenerationEnabled}
+                  onChange={(e) => setImageGenerationEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
+                <div className="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
+              </div>
+              <div>
+                <span className="text-sm font-medium text-gray-700">이미지 자동 생성 (Gemini Imagen)</span>
+                <p className="text-xs text-gray-500">챕터 생성 시 이미지 플레이스홀더를 감지하여 AI 이미지를 자동 생성합니다 (Google API 키 필요)</p>
+              </div>
+            </label>
           </div>
-          <div>
-            <span className="text-sm font-medium text-gray-700">이미지 자동 생성 (Gemini Imagen)</span>
-            <p className="text-xs text-gray-500">챕터 생성 시 이미지 플레이스홀더를 감지하여 AI 이미지를 자동 생성합니다 (Google API 키 필요)</p>
-          </div>
-        </label>
-      </div>
 
-      {/* 샘플 미리보기 모달 */}
+          {/* 프롬프트 편집 토글 */}
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() => setShowPromptEditor(!showPromptEditor)}
+              className="text-sm text-emerald-600 hover:text-emerald-800 font-medium flex items-center gap-1"
+            >
+              {showPromptEditor ? '▾ 프롬프트 설정 접기' : '▸ 프롬프트 설정 보기/수정'}
+            </button>
+
+            {showPromptEditor && (
+              <div className="mt-3 space-y-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    목차 생성 프롬프트 추가 지침
+                  </label>
+                  <textarea
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed bg-white"
+                    rows={8}
+                    value={tocPrompt}
+                    onChange={(e) => setTocPrompt(e.target.value)}
+                    placeholder="목차 생성 시 AI에게 전달될 추가 지침..."
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    목차 자동 생성 시 이 지침이 프롬프트에 추가됩니다
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    챕터 작성 프롬프트 추가 지침
+                  </label>
+                  <textarea
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed bg-white"
+                    rows={8}
+                    value={chapterPrompt}
+                    onChange={(e) => setChapterPrompt(e.target.value)}
+                    placeholder="챕터 작성 시 AI에게 전달될 추가 지침..."
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    각 챕터 생성 시 이 지침이 프롬프트에 추가됩니다
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* 샘플 미리보기 모달 (클래식 모드에서 사용) */}
       {showSampleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSampleModal(false)}>
           <div
@@ -505,52 +865,6 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
           </div>
         </div>
       )}
-
-      {/* 프롬프트 편집 토글 */}
-      <div className="mb-6">
-        <button
-          type="button"
-          onClick={() => setShowPromptEditor(!showPromptEditor)}
-          className="text-sm text-emerald-600 hover:text-emerald-800 font-medium flex items-center gap-1"
-        >
-          {showPromptEditor ? '▾ 프롬프트 설정 접기' : '▸ 프롬프트 설정 보기/수정'}
-        </button>
-
-        {showPromptEditor && (
-          <div className="mt-3 space-y-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                목차 생성 프롬프트 추가 지침
-              </label>
-              <textarea
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed bg-white"
-                rows={8}
-                value={tocPrompt}
-                onChange={(e) => setTocPrompt(e.target.value)}
-                placeholder="목차 생성 시 AI에게 전달될 추가 지침..."
-              />
-              <p className="mt-1 text-xs text-gray-400">
-                목차 자동 생성 시 이 지침이 프롬프트에 추가됩니다
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                챕터 작성 프롬프트 추가 지침
-              </label>
-              <textarea
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed bg-white"
-                rows={8}
-                value={chapterPrompt}
-                onChange={(e) => setChapterPrompt(e.target.value)}
-                placeholder="챕터 작성 시 AI에게 전달될 추가 지침..."
-              />
-              <p className="mt-1 text-xs text-gray-400">
-                각 챕터 생성 시 이 지침이 프롬프트에 추가됩니다
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* 한도 도달 시 새 프로젝트 생성 차단 */}
       {!isEditMode && atLimit ? (
