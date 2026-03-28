@@ -14,7 +14,14 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim
  * 인증 실패 시 401 반환.
  */
 export function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
+  let authHeader = req.headers.authorization;
+
+  // 이미지 등 <img src="?token=xxx"> 요청을 위해 쿼리 토큰도 지원
+  if (!authHeader?.startsWith('Bearer ') && req.query.token) {
+    authHeader = `Bearer ${req.query.token}`;
+    req.headers.authorization = authHeader;
+  }
+
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ message: '로그인이 필요합니다.' });
   }
