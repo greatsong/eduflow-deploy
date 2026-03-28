@@ -2,8 +2,8 @@
   "id": "teacher-guide",
   "name": "교사용 수업 가이드",
   "icon": "👩‍🏫",
-  "description": "교사가 이 문서만 읽으면 바로 수업을 진행할 수 있는 완성형 수업 자료. 수업 시뮬레이션형(강의 스크립트+장면)과 역량평가형(4C+루브릭), 통합형을 지원합니다.",
-  "educational_model": "교사 수업 설계 (Teacher's Lesson Design) — 도입-전개-정리 구조, 4C 역량(창의성·비판적 사고·소통·협업), 수업 시뮬레이션",
+  "description": "기본 정보(주제/시간/형태)→도입-전개-정리 구조→발문과 예상 반응→수업 장면 시나리오→4C 역량 연계→평가 루브릭 포함.",
+  "educational_model": "수업 설계 — 이 문서만 읽으면 바로 수업 가능한 완성형 가이드",
   "context_questions": [
     {
       "id": "teaching_style",

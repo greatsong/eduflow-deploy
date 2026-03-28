@@ -2,8 +2,8 @@
   "id": "textbook",
   "name": "교과서",
   "icon": "📚",
-  "description": "한국 검인정 교과서 표준 구조 기반의 체계적 교재. 생각열기→탐구→개념→확인→정리 5단계 전개.",
-  "educational_model": "탐구 기반 학습 (Inquiry-Based Learning) — 생각열기→탐구활동→개념정리→확인문제→단원정리의 한국 교과서 표준 구조",
+  "description": "생각열기→탐구활동(실험/관찰/조사/토론/모델링)→개념정리→확인문제→단원정리. 선수학습 확인과 학습목표 포함.",
+  "educational_model": "탐구 기반 학습 — 한국 검인정 교과서 표준 5단계 구조",
   "persona_fragment": {
     "role_prefix": "한국 검인정 교과서를 집필하는 교육과정 전문가",
     "audience": "학생",

@@ -4,7 +4,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { apiFetch, apiStreamPost, API_BASE } from '../api/client';
 import { getAuthToken } from '../components/EntryForm';
 
-const TABS = ['프로젝트 설정', '참고자료', '프롬프트 설정', '빠른 시작'];
+const TABS = ['프로젝트 설정', '참고자료', '빠른 시작'];
 
 // 간단한 마크다운 → HTML 변환
 function simpleMarkdownToHtml(md) {
@@ -153,8 +153,7 @@ export default function ProjectManager() {
       {/* 탭 콘텐츠 */}
       {activeTab === 0 && <ProjectSettingsTab project={currentProject} onCreated={() => { fetchProjects(); fetchUserLimit(); }} onUpdated={fetchProjects} atLimit={atLimit} />}
       {activeTab === 1 && <ReferencesTab projectId={currentProject?.name} />}
-      {activeTab === 2 && <PromptSettingsTab projectId={currentProject?.name} />}
-      {activeTab === 3 && <QuickStartTab projectId={currentProject?.name} />}
+      {activeTab === 2 && <QuickStartTab projectId={currentProject?.name} />}
     </div>
   );
 }

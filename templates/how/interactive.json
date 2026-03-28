@@ -2,8 +2,8 @@
   "id": "interactive",
   "name": "인터랙티브 수업 교재",
   "icon": "📖",
-  "description": "MkDocs Material HTML 컴포넌트 기반의 인터랙티브 차시별 교재. 수업 배너, 카드 그리드, Steps 수업 흐름, 평가 문항 포함.",
-  "educational_model": "역량 중심 수업 (Competency-Based Education) — 배너→카드→Steps→본문→평가의 MkDocs HTML 컴포넌트 기반 인터랙티브 교재",
+  "description": "수업 배너·카드 그리드·Steps 흐름·평가 문항 등 MkDocs HTML 컴포넌트를 활용한 시각적 차시별 교재. 핵심 질문 중심 탐구→활동→성찰 구조.",
+  "educational_model": "역량 중심 수업 (CBE) — MkDocs HTML 컴포넌트로 만드는 인터랙티브 차시별 교재",
   "persona_fragment": {
     "role_prefix": "역량 중심 교육과정에 기반한 인터랙티브 교재 개발 전문가",
     "audience": "학생",

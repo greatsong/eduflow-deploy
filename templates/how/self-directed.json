@@ -2,8 +2,8 @@
   "id": "self-directed",
   "name": "자기주도 학습서",
   "icon": "🌱",
-  "description": "선생님 없이 혼자 읽는 학습자가 절대 막히지 않도록 설계된 친절하고 체계적인 학습서. 체크포인트, 트러블슈팅, 동기부여가 핵심.",
-  "educational_model": "자기주도학습 (Self-Directed Learning) — 체크포인트→안내된 실습→트러블슈팅→성취확인의 자기완결적 학습 설계",
+  "description": "동기부여→학습목표→개념(비유 우선)→체크포인트→안내된 실습→FAQ/트러블슈팅→성취 확인. 선생님 없이도 완결되는 구조.",
+  "educational_model": "자기주도학습 — 혼자 읽어도 막히지 않는 친절한 학습서",
   "persona_fragment": {
     "role_prefix": "입문자의 눈높이에서 가르치는 자기주도 학습서 저자",
     "audience": "독학자",
