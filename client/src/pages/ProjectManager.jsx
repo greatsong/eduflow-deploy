@@ -315,6 +315,8 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       // v2 정보 로드 (template-info.json에 저장됨)
       if (templateInfo.what_id) {
         setTemplateMode('v2');
+        // prevSelectedWhat를 먼저 설정하여 useEffect에서 contextAnswers 초기화 방지
+        prevSelectedWhat.current = templateInfo.what_id;
         setSelectedWhat(templateInfo.what_id || '');
         setSelectedHow(templateInfo.how_id || '');
         setSelectedFeatures(templateInfo.features || []);
@@ -353,22 +355,19 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     try {
       const body = {
         ...form,
-        include_hw_diagrams: templateMode === 'v2'
-          ? selectedFeatures.includes('hw_diagrams')
-          : includeHwDiagrams,
-        image_generation_enabled: templateMode === 'v2'
-          ? selectedFeatures.includes('image_generation')
-          : imageGenerationEnabled,
+        include_hw_diagrams: selectedFeatures.includes('hw_diagrams'),
+        image_generation_enabled: selectedFeatures.includes('image_generation'),
         assessment_level: assessmentLevel,
       };
 
-      if (templateMode === 'v2' && selectedWhat && selectedHow) {
+      if (selectedWhat && selectedHow) {
         body.what_id = selectedWhat;
         body.how_id = selectedHow;
         body.features = selectedFeatures;
         body.context_answers = contextAnswers;
-      } else if (templateMode === 'classic' && selectedTemplate) {
-        body.template_id = selectedTemplate;
+      }
+      // 프롬프트 추가 지침이 있으면 포함
+      if (tocPrompt || chapterPrompt) {
         body.custom_prompt_config = {
           toc_prompt_addition: tocPrompt,
           chapter_prompt_addition: chapterPrompt,
@@ -495,33 +494,8 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
         />
       </div>
 
-      {/* 템플릿 모드 토글 */}
-      <div className="flex items-center gap-2 mb-6">
-        <button
-          type="button"
-          onClick={() => setTemplateMode('v2')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            templateMode === 'v2'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          교재 설계 (신규)
-        </button>
-        <button
-          type="button"
-          onClick={() => setTemplateMode('classic')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            templateMode === 'classic'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          클래식 모드
-        </button>
-      </div>
-
-      {templateMode === 'v2' ? (
+      {/* 교재 설계 (v2 모드) */}
+      {(
         <div className="space-y-6 mb-6">
           {/* STEP 1: 교과 전문성 */}
           <div>
@@ -697,98 +671,8 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
             )}
           </div>
 
-          {/* v2 선택 요약 */}
-          {selectedWhat && selectedHow && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
-              <span className="font-medium">설계 요약:</span>{' '}
-              {whats.find(w => w.id === selectedWhat)?.icon}{' '}
-              {whats.find(w => w.id === selectedWhat)?.name}{' + '}
-              {hows.find(h => h.id === selectedHow)?.icon}{' '}
-              {hows.find(h => h.id === selectedHow)?.name}
-              {selectedFeatures.length > 0 && (
-                <span className="text-emerald-600">
-                  {' '}({selectedFeatures.length}개 기능 선택)
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        <>
-          {/* 클래식 모드: 기존 템플릿 선택 */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">템플릿</label>
-            <div className="flex gap-2">
-              <select
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-                value={selectedTemplate}
-                onChange={(e) => setSelectedTemplate(e.target.value)}
-              >
-                <option value="">없음 (직접 설정)</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
-                ))}
-              </select>
-              {selectedTemplate && (
-                <button
-                  type="button"
-                  onClick={handleShowSample}
-                  disabled={sampleLoading}
-                  className="px-3 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50 transition-colors whitespace-nowrap"
-                >
-                  {sampleLoading ? '로딩...' : '샘플 미리보기'}
-                </button>
-              )}
-            </div>
-            {selectedTemplate && (
-              <p className="mt-1 text-xs text-gray-500">
-                {templates.find((t) => t.id === selectedTemplate)?.description}
-              </p>
-            )}
-          </div>
-
-          {/* 회로도 포함 옵션 */}
-          <div className="mb-4">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  checked={includeHwDiagrams}
-                  onChange={(e) => setIncludeHwDiagrams(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
-                <div className="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
-              </div>
-              <div>
-                <span className="text-sm font-medium text-gray-700">인터랙티브 회로도 포함</span>
-                <p className="text-xs text-gray-500">Pico 핀배치, 회로 연결도, 센서 모듈 다이어그램을 자동 생성합니다</p>
-              </div>
-            </label>
-          </div>
-
-          {/* 이미지 자동 생성 옵션 */}
-          <div className="mb-4">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  checked={imageGenerationEnabled}
-                  onChange={(e) => setImageGenerationEnabled(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
-                <div className="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
-              </div>
-              <div>
-                <span className="text-sm font-medium text-gray-700">이미지 자동 생성 (Gemini Imagen)</span>
-                <p className="text-xs text-gray-500">챕터 생성 시 이미지 플레이스홀더를 감지하여 AI 이미지를 자동 생성합니다 (Google API 키 필요)</p>
-              </div>
-            </label>
-          </div>
-
-          {/* 평가 단계 옵션 */}
-          <div className="mb-4">
+          {/* v2 평가 단계 옵션 */}
+          <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">평가 방식</label>
             <select
               value={assessmentLevel}
@@ -806,8 +690,23 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
             </p>
           </div>
 
+          {/* v2 선택 요약 */}
+          {selectedWhat && selectedHow && (
+            <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+              <span className="font-medium">설계 요약:</span>{' '}
+              {whats.find(w => w.id === selectedWhat)?.icon}{' '}
+              {whats.find(w => w.id === selectedWhat)?.name}{' + '}
+              {hows.find(h => h.id === selectedHow)?.icon}{' '}
+              {hows.find(h => h.id === selectedHow)?.name}
+              {selectedFeatures.length > 0 && (
+                <span className="text-emerald-600">
+                  {' '}({selectedFeatures.length}개 기능 선택)
+                </span>
+              )}
+            </div>
+          )}
           {/* 프롬프트 편집 토글 */}
-          <div className="mb-6">
+          <div>
             <button
               type="button"
               onClick={() => setShowPromptEditor(!showPromptEditor)}
@@ -851,7 +750,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
 
       {/* 샘플 미리보기 모달 (클래식 모드에서 사용) */}
