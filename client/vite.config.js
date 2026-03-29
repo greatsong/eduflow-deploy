@@ -4,6 +4,9 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    '__LOCAL_MODE__': process.env.LOCAL_MODE === 'true',
+  },
   server: {
     port: 7830,
     proxy: {

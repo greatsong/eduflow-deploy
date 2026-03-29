@@ -26,6 +26,8 @@ import { TIER_CONFIG } from '../shared/constants.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 config({ path: path.resolve(__dirname, '..', '.env') }); // 루트 .env 로드
 
+const LOCAL_MODE = process.env.LOCAL_MODE === 'true';
+
 const app = express();
 const PORT = process.env.PORT || 7829;
 
@@ -53,8 +55,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 
-// Google Sign-In 팝업이 부모 창과 통신할 수 있도록 COOP 설정
-app.use((req, res, next) => {
+// COOP 헤더: API 응답에만 설정 (HTML 페이지에 설정하면 Google Sign-In postMessage 차단됨)
+app.use('/api', (req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   next();
 });
@@ -68,71 +70,91 @@ app.get('/api/health', (req, res) => {
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const serverSettings = new ServerSettings(path.join(DATA_DIR, 'settings.json'));
 
-// API 키 상태 확인 (서버 .env + 관리자 입력 키 + 운영 모드)
-app.get('/api/auth/status', async (req, res) => {
-  const JWT_SECRET = process.env.JWT_SECRET || 'eduflow-default-secret-change-me';
-  const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
-
-  // 요청자가 관리자인지 판별
-  let isAdminUser = false;
-  try {
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
-      isAdminUser = decoded?.email && ADMIN_EMAILS.includes(decoded.email);
+// API 키 상태 확인
+if (LOCAL_MODE) {
+  // LOCAL_MODE: 인증 없이 모든 기능 개방
+  app.get('/api/auth/status', async (req, res) => {
+    const settings = await serverSettings.get();
+    const serverProviders = {};
+    for (const provider of ['anthropic', 'openai', 'google', 'upstage']) {
+      serverProviders[provider] = !!process.env[`${provider.toUpperCase()}_API_KEY`];
     }
-  } catch { /* 인증 실패 무시 */ }
+    const hasEnvKey = Object.values(serverProviders).some(Boolean);
+    res.json({
+      hasEnvKey,
+      isAdmin: true,
+      apiMode: settings.apiMode || 'user',
+      serverModeMessage: settings.serverModeMessage || '',
+      allowedModels: settings.allowedModels || [],
+      serverProviders,
+      sharedProviders: serverProviders,
+      tier: 'master',
+      allowPremiumModels: true,
+    });
+  });
+} else {
+  // Deploy 모드: Google OAuth + JWT + 등급 시스템
+  app.get('/api/auth/status', async (req, res) => {
+    const JWT_SECRET = process.env.JWT_SECRET || 'eduflow-default-secret-change-me';
+    const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
 
-  // 사용자 등급(tier) 조회
-  let userTier = 'starter';
-  if (isAdminUser) {
-    userTier = 'master';
-  } else {
+    let isAdminUser = false;
     try {
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith('Bearer ')) {
         const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
-        const usersFile = path.join(DATA_DIR, 'users.json');
-        if (existsSync(usersFile)) {
-          const { readFile: rf } = await import('fs/promises');
-          const usersData = JSON.parse(await rf(usersFile, 'utf-8'));
-          const userRecord = usersData.find(u => u.googleId === decoded?.googleId);
-          userTier = userRecord?.tier || 'starter';
-        }
+        isAdminUser = decoded?.email && ADMIN_EMAILS.includes(decoded.email);
       }
-    } catch { /* ignore */ }
-  }
+    } catch { /* 인증 실패 무시 */ }
 
-  // 운영 설정 + 관리자 API 키 정보
-  const settings = await serverSettings.get();
-  const adminKeys = settings.adminApiKeys || {};
+    let userTier = 'starter';
+    if (isAdminUser) {
+      userTier = 'master';
+    } else {
+      try {
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+          const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+          const usersFile = path.join(DATA_DIR, 'users.json');
+          if (existsSync(usersFile)) {
+            const { readFile: rf } = await import('fs/promises');
+            const usersData = JSON.parse(await rf(usersFile, 'utf-8'));
+            const userRecord = usersData.find(u => u.googleId === decoded?.googleId);
+            userTier = userRecord?.tier || 'starter';
+          }
+        }
+      } catch { /* ignore */ }
+    }
 
-  // 서버 제공 프로바이더 (현재 사용자 기준 + 일반 사용자 기준)
-  const serverProviders = {};    // 현재 사용자가 쓸 수 있는 서버 키
-  const sharedProviders = {};    // 일반 사용자도 쓸 수 있는 공개 키
-  for (const provider of ['anthropic', 'openai', 'google', 'upstage']) {
-    const envKey = !!process.env[`${provider.toUpperCase()}_API_KEY`];
-    const stored = adminKeys[provider];
-    const isShared = envKey || !!(stored?.key && stored.shared);
-    const isAvailable = isShared || !!(stored?.key && isAdminUser);
-    serverProviders[provider] = isAvailable;
-    sharedProviders[provider] = isShared;
-  }
+    const settings = await serverSettings.get();
+    const adminKeys = settings.adminApiKeys || {};
 
-  const hasEnvKey = Object.values(serverProviders).some(Boolean);
+    const serverProviders = {};
+    const sharedProviders = {};
+    for (const provider of ['anthropic', 'openai', 'google', 'upstage']) {
+      const envKey = !!process.env[`${provider.toUpperCase()}_API_KEY`];
+      const stored = adminKeys[provider];
+      const isShared = envKey || !!(stored?.key && stored.shared);
+      const isAvailable = isShared || !!(stored?.key && isAdminUser);
+      serverProviders[provider] = isAvailable;
+      sharedProviders[provider] = isShared;
+    }
 
-  res.json({
-    hasEnvKey,
-    isAdmin: isAdminUser,
-    apiMode: settings.apiMode || 'user',
-    serverModeMessage: settings.serverModeMessage || '',
-    allowedModels: settings.allowedModels || [],
-    serverProviders,     // 나에게 사용 가능한 서버 키
-    sharedProviders,     // 모든 사용자에게 공개된 키
-    tier: userTier,
-    allowPremiumModels: TIER_CONFIG[userTier]?.allowPremiumModels ?? false,
+    const hasEnvKey = Object.values(serverProviders).some(Boolean);
+
+    res.json({
+      hasEnvKey,
+      isAdmin: isAdminUser,
+      apiMode: settings.apiMode || 'user',
+      serverModeMessage: settings.serverModeMessage || '',
+      allowedModels: settings.allowedModels || [],
+      serverProviders,
+      sharedProviders,
+      tier: userTier,
+      allowPremiumModels: TIER_CONFIG[userTier]?.allowPremiumModels ?? false,
+    });
   });
-});
+}
 
 // API 키 검증 (간소화: 키가 비어있지 않으면 유효로 처리)
 app.post('/api/auth/verify', async (req, res) => {
@@ -149,8 +171,10 @@ app.post('/api/auth/verify', async (req, res) => {
   res.json({ valid: true });
 });
 
-// 구글 로그인 라우트 (인증 불필요)
-app.use('/api/auth', authRouter);
+// 구글 로그인 라우트 (인증 불필요, Deploy 전용)
+if (!LOCAL_MODE) {
+  app.use('/api/auth', authRouter);
+}
 
 // 빌드된 사이트 미리보기 (인증 불필요 — iframe에서 접근)
 const PROJECTS_DIR_RESOLVED = process.env.PROJECTS_DIR || path.join(__dirname, '..', 'projects');
@@ -194,111 +218,120 @@ app.get('/api/projects/:id/deploy/preview/{*filePath}', async (req, res) => {
   }
 });
 
-// === 이하 모든 API 라우트에 구글 로그인 인증 적용 ===
-app.use('/api', requireAuth);
+if (LOCAL_MODE) {
+  // LOCAL_MODE: 인증 없이 목(mock) 사용자 주입
+  app.use('/api', (req, res, next) => {
+    req.user = { googleId: 'local', email: 'local@eduflow', name: 'Local User' };
+    req.userTier = 'master';
+    next();
+  });
+  console.log('[EduFlow] LOCAL_MODE 활성화 — 인증 없이 실행');
+} else {
+  // === Deploy 모드: 구글 로그인 인증 + 사용자 승인 시스템 ===
+  app.use('/api', requireAuth);
 
-// 사용자 상태 확인 (pending 여부 + 프로젝트 한도 — 프론트엔드용, 승인 불필요)
-app.get('/api/user/status', async (req, res) => {
-  try {
-    const { readFile: rf, readdir: rd } = await import('fs/promises');
-    const usersRaw = existsSync(path.join(DATA_DIR, 'users.json'))
-      ? JSON.parse(await rf(path.join(DATA_DIR, 'users.json'), 'utf-8'))
-      : [];
-    const user = usersRaw.find(u => u.googleId === req.user?.googleId);
+  // 사용자 상태 확인 (pending 여부 + 프로젝트 한도)
+  app.get('/api/user/status', async (req, res) => {
+    try {
+      const { readFile: rf, readdir: rd } = await import('fs/promises');
+      const usersRaw = existsSync(path.join(DATA_DIR, 'users.json'))
+        ? JSON.parse(await rf(path.join(DATA_DIR, 'users.json'), 'utf-8'))
+        : [];
+      const user = usersRaw.find(u => u.googleId === req.user?.googleId);
 
-    // 프로젝트 수 카운트
-    let projectCount = 0;
-    if (existsSync(PROJECTS_DIR_RESOLVED)) {
-      try {
-        const entries = await rd(PROJECTS_DIR_RESOLVED, { withFileTypes: true });
-        for (const entry of entries) {
-          if (!entry.isDirectory() || entry.name === 'template') continue;
-          const configFile = path.join(PROJECTS_DIR_RESOLVED, entry.name, 'config.json');
-          if (!existsSync(configFile)) continue;
-          try {
-            const raw = await rf(configFile, 'utf-8');
-            const config = JSON.parse(raw);
-            if (config.owner?.googleId === req.user?.googleId) projectCount++;
-          } catch { /* skip */ }
-        }
-      } catch { /* skip */ }
+      let projectCount = 0;
+      if (existsSync(PROJECTS_DIR_RESOLVED)) {
+        try {
+          const entries = await rd(PROJECTS_DIR_RESOLVED, { withFileTypes: true });
+          for (const entry of entries) {
+            if (!entry.isDirectory() || entry.name === 'template') continue;
+            const configFile = path.join(PROJECTS_DIR_RESOLVED, entry.name, 'config.json');
+            if (!existsSync(configFile)) continue;
+            try {
+              const raw = await rf(configFile, 'utf-8');
+              const config = JSON.parse(raw);
+              if (config.owner?.googleId === req.user?.googleId) projectCount++;
+            } catch { /* skip */ }
+          }
+        } catch { /* skip */ }
+      }
+
+      const ADMIN_EMAILS_LIST = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
+      const isAdmin = req.user?.email && ADMIN_EMAILS_LIST.includes(req.user.email);
+      const userTier = isAdmin ? 'master' : (user?.tier || 'starter');
+
+      res.json({
+        status: user?.status || 'active',
+        maxProjects: isAdmin ? 99 : (user?.maxProjects || 1),
+        projectCount,
+        isAdmin,
+        tier: userTier,
+        allowPremiumModels: TIER_CONFIG[userTier]?.allowPremiumModels ?? false,
+      });
+    } catch {
+      res.json({ status: 'active', maxProjects: 1, projectCount: 0, tier: 'starter', allowPremiumModels: false });
     }
+  });
 
-    const ADMIN_EMAILS_LIST = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
-    const isAdmin = req.user?.email && ADMIN_EMAILS_LIST.includes(req.user.email);
-    const userTier = isAdmin ? 'master' : (user?.tier || 'starter');
+  // 재신청 (inactive → pending)
+  app.post('/api/user/reapply', async (req, res) => {
+    try {
+      const { readFile: rf, writeFile: wf } = await import('fs/promises');
+      const usersFile = path.join(DATA_DIR, 'users.json');
+      if (!existsSync(usersFile)) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
 
-    res.json({
-      status: user?.status || 'active',
-      maxProjects: isAdmin ? 99 : (user?.maxProjects || 1),
-      projectCount,
-      isAdmin,
-      tier: userTier,
-      allowPremiumModels: TIER_CONFIG[userTier]?.allowPremiumModels ?? false,
-    });
-  } catch {
-    res.json({ status: 'active', maxProjects: 1, projectCount: 0, tier: 'starter', allowPremiumModels: false });
-  }
-});
+      const users = JSON.parse(await rf(usersFile, 'utf-8'));
+      const idx = users.findIndex(u => u.googleId === req.user?.googleId);
+      if (idx < 0) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+      if (users[idx].status !== 'inactive') {
+        return res.status(400).json({ message: '재신청은 비활성화된 계정만 가능합니다.' });
+      }
 
-// 재신청 (inactive → pending)
-app.post('/api/user/reapply', async (req, res) => {
-  try {
-    const { readFile: rf, writeFile: wf } = await import('fs/promises');
-    const usersFile = path.join(DATA_DIR, 'users.json');
-    if (!existsSync(usersFile)) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-
-    const users = JSON.parse(await rf(usersFile, 'utf-8'));
-    const idx = users.findIndex(u => u.googleId === req.user?.googleId);
-    if (idx < 0) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-    if (users[idx].status !== 'inactive') {
-      return res.status(400).json({ message: '재신청은 비활성화된 계정만 가능합니다.' });
+      users[idx].status = 'pending';
+      users[idx].reappliedAt = new Date().toISOString();
+      await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
+      res.json({ success: true, status: 'pending' });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
     }
+  });
 
-    users[idx].status = 'pending';
-    users[idx].reappliedAt = new Date().toISOString();
-    await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
-    res.json({ success: true, status: 'pending' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+  // 사용자 프로필 업데이트
+  app.put('/api/user/profile', async (req, res) => {
+    try {
+      const { readFile: rf, writeFile: wf, mkdir: mkd } = await import('fs/promises');
+      const usersFile = path.join(DATA_DIR, 'users.json');
+      if (!existsSync(DATA_DIR)) await mkd(DATA_DIR, { recursive: true });
+      const users = existsSync(usersFile) ? JSON.parse(await rf(usersFile, 'utf-8')) : [];
+      const idx = users.findIndex(u => u.googleId === req.user?.googleId);
+      if (idx < 0) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
 
-// 사용자 프로필 업데이트 (추가 정보: 소속, 담당과목 등)
-app.put('/api/user/profile', async (req, res) => {
-  try {
-    const { readFile: rf, writeFile: wf, mkdir: mkd } = await import('fs/promises');
-    const usersFile = path.join(DATA_DIR, 'users.json');
-    if (!existsSync(DATA_DIR)) await mkd(DATA_DIR, { recursive: true });
-    const users = existsSync(usersFile) ? JSON.parse(await rf(usersFile, 'utf-8')) : [];
-    const idx = users.findIndex(u => u.googleId === req.user?.googleId);
-    if (idx < 0) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+      const { name, affiliation, subjects, region, intro, motivation, topic, expertise, sampleChapter, samplePerspective } = req.body;
+      if (name !== undefined) users[idx].name = name;
+      if (affiliation !== undefined) users[idx].affiliation = affiliation;
+      if (subjects !== undefined) users[idx].subjects = subjects;
+      if (region !== undefined) users[idx].region = region;
+      if (intro !== undefined) users[idx].intro = intro;
+      if (motivation !== undefined) users[idx].motivation = motivation;
+      if (topic !== undefined) users[idx].topic = topic;
+      if (expertise !== undefined) users[idx].expertise = expertise;
+      if (sampleChapter !== undefined) users[idx].sampleChapter = sampleChapter;
+      if (samplePerspective !== undefined) users[idx].samplePerspective = samplePerspective;
+      users[idx].updatedAt = new Date().toISOString();
 
-    const { name, affiliation, subjects, region, intro, motivation, topic, expertise, sampleChapter, samplePerspective } = req.body;
-    if (name !== undefined) users[idx].name = name;
-    if (affiliation !== undefined) users[idx].affiliation = affiliation;
-    if (subjects !== undefined) users[idx].subjects = subjects;
-    if (region !== undefined) users[idx].region = region;
-    if (intro !== undefined) users[idx].intro = intro;
-    if (motivation !== undefined) users[idx].motivation = motivation;
-    if (topic !== undefined) users[idx].topic = topic;
-    if (expertise !== undefined) users[idx].expertise = expertise;
-    if (sampleChapter !== undefined) users[idx].sampleChapter = sampleChapter;
-    if (samplePerspective !== undefined) users[idx].samplePerspective = samplePerspective;
-    users[idx].updatedAt = new Date().toISOString();
+      await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
-    await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+  // 관리자 라우트
+  app.use('/api/admin', adminRouter);
 
-// 관리자 라우트 (requireAdmin은 admin.js 내부에서 적용, 승인 체크 불필요)
-app.use('/api/admin', adminRouter);
-
-// === 이하 라우트는 승인된 사용자만 접근 가능 ===
-app.use('/api', requireApproved);
+  // === 이하 라우트는 승인된 사용자만 접근 가능 ===
+  app.use('/api', requireApproved);
+}
 
 // 라우트
 app.use('/api/models', modelsRouter);

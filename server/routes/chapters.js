@@ -9,6 +9,7 @@ import { ChapterGenerator } from '../services/chapterGenerator.js';
 import { ProgressManager } from '../services/progressManager.js';
 import { streamChat, detectProvider, resolveApiKey } from '../services/aiProvider.js';
 import { TokenUsageManager } from '../services/tokenUsageManager.js';
+import { ImageGenerator } from '../services/imageGenerator.js';
 import { sanitizeId } from '../middleware/sanitize.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -69,22 +70,42 @@ router.post('/generation-cancel', asyncHandler(async (req, res) => {
   res.json({ success: cancelled, message: cancelled ? '취소 요청됨' : '실행 중인 생성이 없습니다' });
 }));
 
-// GET /api/projects/:id/chapters/images - 이미지 목록
+// GET /api/projects/:id/chapters/images - 이미지 목록 (메타데이터 포함)
 router.get('/images', asyncHandler(async (req, res) => {
-  const imagesDir = join(projectPath(req.params.id), 'docs', 'images');
-  if (!existsSync(imagesDir)) {
-    return res.json([]);
-  }
-  const { readdir: rd, stat: st } = await import('fs/promises');
-  const files = await rd(imagesDir);
-  const images = [];
-  for (const f of files) {
-    if (/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f)) {
-      const s = await st(join(imagesDir, f));
-      images.push({ name: f, size: s.size, created: s.birthtime });
+  const projPath = projectPath(req.params.id);
+  const imagesDir = join(projPath, 'docs', 'images');
+
+  // 파일시스템에서 실제 파일 목록
+  const fileList = [];
+  if (existsSync(imagesDir)) {
+    const { readdir: rd, stat: st } = await import('fs/promises');
+    const files = await rd(imagesDir);
+    for (const f of files) {
+      if (/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f)) {
+        const s = await st(join(imagesDir, f));
+        fileList.push({ name: f, size: s.size, created: s.birthtime });
+      }
     }
   }
-  res.json(images);
+
+  // 메타데이터 스토어에서 추가 정보 병합
+  const imgGen = new ImageGenerator({ projectPath: projPath });
+  const metaList = await imgGen.listImages();
+
+  // 파일 목록에 메타데이터 병합
+  const merged = fileList.map(file => {
+    const meta = metaList.find(m => m.filename === file.name);
+    return {
+      ...file,
+      ...(meta || {}),
+      // 파일시스템 정보 우선
+      name: file.name,
+      size: file.size,
+      created: file.created,
+    };
+  });
+
+  res.json(merged);
 }));
 
 // GET /api/projects/:id/chapters/images/:filename - 이미지 파일 서빙
@@ -406,43 +427,146 @@ ${imagePrompt}
   res.end();
 }));
 
-// POST /api/projects/:id/chapters/:chapterId/regenerate-image - 이미지 재생성
-router.post('/:chapterId/regenerate-image', requireApiKey, asyncHandler(async (req, res) => {
-  const { imageName, newPrompt } = req.body;
-  if (!imageName || !newPrompt) {
-    return res.status(400).json({ message: 'imageName과 newPrompt가 필요합니다' });
+// POST /api/projects/:id/chapters/:chapterId/generate-images - 챕터 이미지 일괄 생성
+router.post('/:chapterId/generate-images', requireApiKey, asyncHandler(async (req, res) => {
+  const { resolution } = req.body;
+  const projPath = projectPath(req.params.id);
+  const chapterId = req.params.chapterId;
+
+  // 챕터 내용 로드
+  const gen = new ChapterGenerator(projPath, req.apiKeys);
+  await gen.init();
+  const content = await gen.readChapter(chapterId);
+  if (!content) {
+    return res.status(404).json({ message: '챕터를 찾을 수 없습니다' });
   }
 
   const googleApiKey = resolveApiKey('google', req.apiKeys);
-  if (!googleApiKey) {
-    return res.status(400).json({ message: 'Google API 키가 필요합니다' });
+  const openaiApiKey = resolveApiKey('openai', req.apiKeys);
+
+  // 이미지 가이드라인 로드
+  let styleGuide = '';
+  const guideFile = join(projPath, 'image_guidelines.md');
+  if (existsSync(guideFile)) {
+    const { readFile: rf } = await import('fs/promises');
+    styleGuide = (await rf(guideFile, 'utf-8')).trim();
   }
 
-  try {
-    const { ImageGenerator } = await import('../services/imageGenerator.js');
-    const imgGen = new ImageGenerator(googleApiKey, undefined, tokenUsage, {
+  const imgGen = new ImageGenerator({
+    googleApiKey,
+    openaiApiKey,
+    styleGuide,
+    resolution: resolution || 'standard',
+    projectPath: projPath,
+    usageTracker: tokenUsage,
+    userInfo: {
       userId: req.user?.googleId,
       userName: req.user?.name,
       userEmail: req.user?.email,
       projectId: req.params.id,
-    });
-    const docsPath = join(projectPath(req.params.id), 'docs');
-    const result = await imgGen.generateSingle(newPrompt, imageName, docsPath);
+    },
+  });
 
-    // 이미지 생성도 토큰 사용량으로 기록
-    tokenUsage.record({
-      userId: req.user?.googleId, userName: req.user?.name,
-      userEmail: req.user?.email,
-      projectId: req.params.id, action: 'image-regenerate',
-      provider: 'google', model: imgGen.model,
-      inputTokens: 0, outputTokens: 0,
-      keySource: 'server',
+  const placeholders = imgGen.findPlaceholders(content);
+  if (placeholders.length === 0) {
+    return res.json({
+      success: true,
+      message: '이미지 플레이스홀더가 없습니다',
+      generated: 0,
+      placeholders: 0,
     });
+  }
+
+  // SSE 스트리밍으로 진행 상황 전송
+  sseHeaders(res);
+
+  try {
+    const updatedContent = await imgGen.processChapterImages(
+      content, projPath, chapterId,
+      (msg) => sseSend(res, { type: 'progress', message: msg })
+    );
+
+    // 업데이트된 내용 저장
+    await gen.saveChapter(chapterId, updatedContent);
+
+    const images = await imgGen.listChapterImages(chapterId);
+    sseSend(res, {
+      type: 'done',
+      generated: images.filter(i => i.status === 'generated').length,
+      placeholders: images.filter(i => i.status === 'placeholder').length,
+      total: placeholders.length,
+      images,
+    });
+  } catch (e) {
+    sseSend(res, { type: 'error', message: e.message });
+  }
+
+  res.end();
+}));
+
+// POST /api/projects/:id/chapters/:chapterId/regenerate-image - 단일 이미지 재생성
+router.post('/:chapterId/regenerate-image', requireApiKey, asyncHandler(async (req, res) => {
+  const { imageName, newPrompt, resolution } = req.body;
+  if (!imageName || !newPrompt) {
+    return res.status(400).json({ message: 'imageName과 newPrompt가 필요합니다' });
+  }
+
+  const projPath = projectPath(req.params.id);
+  const googleApiKey = resolveApiKey('google', req.apiKeys);
+  const openaiApiKey = resolveApiKey('openai', req.apiKeys);
+
+  // 이미지 가이드라인 로드
+  let styleGuide = '';
+  const guideFile = join(projPath, 'image_guidelines.md');
+  if (existsSync(guideFile)) {
+    const { readFile: rf } = await import('fs/promises');
+    styleGuide = (await rf(guideFile, 'utf-8')).trim();
+  }
+
+  try {
+    const imgGen = new ImageGenerator({
+      googleApiKey,
+      openaiApiKey,
+      styleGuide,
+      resolution: resolution || 'standard',
+      projectPath: projPath,
+      usageTracker: tokenUsage,
+      userInfo: {
+        userId: req.user?.googleId,
+        userName: req.user?.name,
+        userEmail: req.user?.email,
+        projectId: req.params.id,
+      },
+    });
+
+    const result = await imgGen.generateSingle(
+      newPrompt, imageName,
+      join(projPath, 'docs'),
+      req.params.chapterId
+    );
 
     res.json({ success: true, ...result });
   } catch (e) {
     res.status(500).json({ message: `이미지 생성 실패: ${e.message}` });
   }
+}));
+
+// PATCH /api/projects/:id/chapters/images/:imageId/rate - 이미지 평가 (1-5점)
+router.patch('/images/:imageId/rate', asyncHandler(async (req, res) => {
+  const { rating } = req.body;
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: '평가 점수는 1~5 사이의 정수여야 합니다' });
+  }
+
+  const projPath = projectPath(req.params.id);
+  const imgGen = new ImageGenerator({ projectPath: projPath });
+  const updated = await imgGen.rateImage(req.params.imageId, rating);
+
+  if (!updated) {
+    return res.status(404).json({ message: '이미지를 찾을 수 없습니다' });
+  }
+
+  res.json({ success: true, image: updated });
 }));
 
 export default router;

@@ -1,5 +1,8 @@
 import { getAuthToken } from '../components/EntryForm';
 
+/* global __LOCAL_MODE__ */
+const LOCAL_MODE = typeof __LOCAL_MODE__ !== 'undefined' && __LOCAL_MODE__;
+
 export const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // 프로바이더별 localStorage 키 매핑
@@ -44,9 +47,11 @@ export function hasApiKey() {
 function authHeaders(extra = {}) {
   const headers = { 'Content-Type': 'application/json' };
 
-  // 구글 로그인 인증 토큰
-  const token = getAuthToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // 구글 로그인 인증 토큰 (LOCAL_MODE에서는 스킵)
+  if (!LOCAL_MODE) {
+    const token = getAuthToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
 
   // 기존 호환: x-api-key (사용자가 직접 키를 입력한 경우)
   const anthropicKey = getApiKey('anthropic');

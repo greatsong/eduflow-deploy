@@ -346,7 +346,7 @@ export class ChapterGenerator {
     const effectiveMinutes = timeMinutes > 0 ? timeMinutes : 50;
 
     // 프롬프트의 charMax (AI에게 요청하는 최대 글자 수)
-    const charMax = effectiveMinutes * 100;
+    const charMax = effectiveMinutes * 500;
 
     // max_tokens는 charMax의 2배로 설정 — 충분한 여유
     // → AI가 가이드를 따르면 charMax 이내에서 끝남 (잘림 없음)
@@ -707,8 +707,8 @@ export class ChapterGenerator {
         courseInfo = `\n**전체 과정**: 총 ${totalChapters}차시 중 ${currentNum}차시\n- 각 차시는 ${effectiveTimeLabel} 분량입니다\n`;
       }
       // 분량 계산: 프롬프트 가이드용 (실제 max_tokens는 이보다 훨씬 넉넉하게 설정됨)
-      const charMin = effectiveMinutes * 60;
-      const charMax = effectiveMinutes * 100;
+      const charMin = effectiveMinutes * 300;
+      const charMax = effectiveMinutes * 500;
       const safeCharMax = Math.round(charMax * 0.9); // 90% 지점에서 마무리 유도
       const conceptCount = Math.max(1, Math.min(4, Math.floor(effectiveMinutes / 20)));
       const stepCount = Math.max(2, Math.min(6, Math.floor(effectiveMinutes / 10)));
@@ -958,6 +958,36 @@ ${courseInfo}
   }
 
   /**
+   * 이미지 플레이스홀더를 처리하는 공통 헬퍼 (v2 ImageGenerator 사용)
+   * API 키가 없어도 플레이스홀더 SVG가 생성되므로 항상 동작
+   */
+  async _processImages(content, chapterId, progressCallback) {
+    const googleApiKey = resolveApiKey('google', this.apiKeys);
+    const openaiApiKey = resolveApiKey('openai', this.apiKeys);
+
+    let imgStyleGuide = '';
+    const imgGuideFile = join(this.projectPath, 'image_guidelines.md');
+    if (existsSync(imgGuideFile)) {
+      imgStyleGuide = (await readFile(imgGuideFile, 'utf-8')).trim();
+    }
+
+    const imgGen = new ImageGenerator({
+      googleApiKey,
+      openaiApiKey,
+      styleGuide: imgStyleGuide,
+      resolution: this.projectConfig.image_resolution || 'standard',
+      projectPath: this.projectPath,
+    });
+
+    const placeholders = imgGen.findPlaceholders(content);
+    if (placeholders.length === 0) return content;
+
+    const providerLabel = imgGen.availableProvider === 'none' ? '플레이스홀더' : imgGen.availableProvider;
+    this._log(`🖼️ ${chapterId} 이미지 플레이스홀더 ${placeholders.length}개 → ${providerLabel} 생성`);
+    return imgGen.processChapterImages(content, this.projectPath, chapterId, progressCallback);
+  }
+
+  /**
    * 챕터 생성 후 검증을 실행하고 결과를 로그/콜백으로 전달
    * @returns {{ valid: boolean, warnings: string[], errors: string[] }}
    */
@@ -966,8 +996,8 @@ ${courseInfo}
     const timeMinutes = this._parseTimeMinutes(estimatedTime);
     const effectiveMinutes = timeMinutes > 0 ? timeMinutes : 50;
     const tokenCharLimit = maxTokens; // 한국어: 1토큰 ≈ 1자
-    const charMin = Math.min(effectiveMinutes * 60, tokenCharLimit);
-    const charMax = Math.min(effectiveMinutes * 100, tokenCharLimit);
+    const charMin = Math.min(effectiveMinutes * 300, tokenCharLimit);
+    const charMax = Math.min(effectiveMinutes * 500, tokenCharLimit);
 
     const validation = this._validateChapter(content, templateId, { chapterId }, charMin, charMax);
 
@@ -1031,7 +1061,10 @@ ${courseInfo}
     }
 
     try {
-      if (progressCallback) progressCallback(`🤖 ${chapterId} Claude API 호출 중...`);
+      if (progressCallback) {
+        const providerName = { anthropic: 'Claude', openai: 'OpenAI', google: 'Gemini', upstage: 'Solar' }[detectProvider(model)] || 'AI';
+        progressCallback(`🤖 ${chapterId} ${providerName} API 호출 중...`);
+      }
 
       const result = await this._streamGenerate(model, effectiveMaxTokens, prompt, chapterId, progressCallback);
 
@@ -1040,27 +1073,34 @@ ${courseInfo}
       const imgEnabled = this.projectConfig.image_generation_enabled
         || (this.templateInfo.features || []).includes('image_generation');
       if (imgEnabled) {
-        const googleApiKey = resolveApiKey('google', this.apiKeys);
-        if (googleApiKey) {
-          try {
-            // 이미지 가이드라인 로드
-            let imgStyleGuide = '';
-            const imgGuideFile = join(this.projectPath, 'image_guidelines.md');
-            if (existsSync(imgGuideFile)) {
-              imgStyleGuide = (await readFile(imgGuideFile, 'utf-8')).trim();
-            }
-            const imgGen = new ImageGenerator(googleApiKey, undefined, null, {}, imgStyleGuide);
-            const placeholders = imgGen.findPlaceholders(finalContent);
-            if (placeholders.length > 0) {
-              this._log(`🖼️ ${chapterId} 이미지 플레이스홀더 ${placeholders.length}개 감지 → 이미지 생성 시작`);
-              finalContent = await imgGen.processChapterImages(finalContent, this.docsPath, chapterId, progressCallback);
-            }
-          } catch (imgErr) {
-            this._log(`⚠️ ${chapterId} 이미지 생성 중 오류 (콘텐츠는 유지): ${imgErr.message}`);
-            if (progressCallback) progressCallback(`⚠️ 이미지 생성 중 오류 발생 (텍스트 콘텐츠는 정상 저장됩니다)`);
+        try {
+          const googleApiKey = resolveApiKey('google', this.apiKeys);
+          const openaiApiKey = resolveApiKey('openai', this.apiKeys);
+
+          // 이미지 가이드라인 로드
+          let imgStyleGuide = '';
+          const imgGuideFile = join(this.projectPath, 'image_guidelines.md');
+          if (existsSync(imgGuideFile)) {
+            imgStyleGuide = (await readFile(imgGuideFile, 'utf-8')).trim();
           }
-        } else {
-          this._log(`⚠️ ${chapterId} 이미지 생성 활성화됨, 그러나 Google API 키 없음 → 건너뜀`);
+
+          const imgGen = new ImageGenerator({
+            googleApiKey,
+            openaiApiKey,
+            styleGuide: imgStyleGuide,
+            resolution: this.projectConfig.image_resolution || 'standard',
+            projectPath: this.projectPath,
+          });
+
+          const placeholders = imgGen.findPlaceholders(finalContent);
+          if (placeholders.length > 0) {
+            const providerLabel = imgGen.availableProvider === 'none' ? '플레이스홀더' : imgGen.availableProvider;
+            this._log(`🖼️ ${chapterId} 이미지 플레이스홀더 ${placeholders.length}개 감지 → ${providerLabel} 생성 시작`);
+            finalContent = await imgGen.processChapterImages(finalContent, this.projectPath, chapterId, progressCallback);
+          }
+        } catch (imgErr) {
+          this._log(`⚠️ ${chapterId} 이미지 생성 중 오류 (콘텐츠는 유지): ${imgErr.message}`);
+          if (progressCallback) progressCallback(`⚠️ 이미지 생성 중 오류 발생 (텍스트 콘텐츠는 정상 저장됩니다)`);
         }
       }
 
@@ -1104,16 +1144,10 @@ ${courseInfo}
             // 재시도 성공 시에도 이미지 생성 처리
             let retryContent = retryResult.content;
             if (this.projectConfig.image_generation_enabled) {
-              const googleApiKey = resolveApiKey('google', this.apiKeys);
-              if (googleApiKey) {
-                try {
-                  const imgGen = new ImageGenerator(googleApiKey);
-                  if (imgGen.findPlaceholders(retryContent).length > 0) {
-                    retryContent = await imgGen.processChapterImages(retryContent, this.docsPath, chapterId, progressCallback);
-                  }
-                } catch (imgErr) {
-                  this._log(`⚠️ ${chapterId} 재시도 이미지 생성 오류: ${imgErr.message}`);
-                }
+              try {
+                retryContent = await this._processImages(retryContent, chapterId, progressCallback);
+              } catch (imgErr) {
+                this._log(`⚠️ ${chapterId} 재시도 이미지 생성 오류: ${imgErr.message}`);
               }
             }
 
@@ -1164,16 +1198,10 @@ ${courseInfo}
           // 529 재시도 성공 시에도 이미지 생성 처리
           let retryContent529 = retryResult.content;
           if (this.projectConfig.image_generation_enabled) {
-            const googleApiKey = resolveApiKey('google', this.apiKeys);
-            if (googleApiKey) {
-              try {
-                const imgGen = new ImageGenerator(googleApiKey);
-                if (imgGen.findPlaceholders(retryContent529).length > 0) {
-                  retryContent529 = await imgGen.processChapterImages(retryContent529, this.docsPath, chapterId, progressCallback);
-                }
-              } catch (imgErr) {
-                this._log(`⚠️ ${chapterId} 529 재시도 이미지 생성 오류: ${imgErr.message}`);
-              }
+            try {
+              retryContent529 = await this._processImages(retryContent529, chapterId, progressCallback);
+            } catch (imgErr) {
+              this._log(`⚠️ ${chapterId} 529 재시도 이미지 생성 오류: ${imgErr.message}`);
             }
           }
 

@@ -15,6 +15,9 @@ import EntryForm, { hasUserInfo, getUserInfo, setUserInfo, clearUserInfo, getAut
 import Logo from './components/Logo';
 import { TIER_CONFIG } from '../../shared/constants.js';
 
+/* global __LOCAL_MODE__ */
+const LOCAL_MODE = typeof __LOCAL_MODE__ !== 'undefined' && __LOCAL_MODE__;
+
 /** 폭죽/컨페티 애니메이션 캔버스 */
 function ConfettiCanvas({ duration = 4000 }) {
   const canvasRef = useRef(null);
@@ -376,13 +379,14 @@ function PendingApproval() {
 }
 
 export default function App() {
-  const [entered, setEntered] = useState(hasUserInfo());
-  const [userStatus, setUserStatus] = useState(null); // null=로딩, 'active', 'pending', 'inactive'
+  // LOCAL_MODE: 인증 플로우 전체 스킵
+  const [entered, setEntered] = useState(LOCAL_MODE || hasUserInfo());
+  const [userStatus, setUserStatus] = useState(LOCAL_MODE ? 'active' : null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [levelUpData, setLevelUpData] = useState({ oldLimit: 1, newLimit: 1 });
-  const [maxProjects, setMaxProjects] = useState(1);
-  const [tier, setTier] = useState('starter');
+  const [maxProjects, setMaxProjects] = useState(LOCAL_MODE ? 99 : 1);
+  const [tier, setTier] = useState(LOCAL_MODE ? 'master' : 'starter');
   const [isNewUser, setIsNewUser] = useState(false);
 
   // EntryForm 완료 시 신규 사용자 여부 체크
@@ -391,9 +395,9 @@ export default function App() {
     setEntered(true);
   };
 
-  // 로그인 후 사용자 상태 확인
+  // 로그인 후 사용자 상태 확인 (Deploy 모드 전용)
   useEffect(() => {
-    if (!entered) return;
+    if (LOCAL_MODE || !entered) return;
     const token = getAuthToken();
     if (!token) { setUserStatus('active'); return; }
 
@@ -410,7 +414,6 @@ export default function App() {
         setUserStatus(status);
 
         if (status === 'active') {
-          // 웰컴 화면: 처음 승인된 사용자 (localStorage에 welcomed 플래그 없음)
           const user = getUserInfo();
           const welcomeKey = `eduflow_welcomed_${user?.email}`;
           if (!localStorage.getItem(welcomeKey)) {
@@ -421,7 +424,6 @@ export default function App() {
             return;
           }
 
-          // 레벨업 체크: 이전 저장된 등급/한도보다 높아졌으면 축하
           const prevLimitKey = `eduflow_maxProjects_${user?.email}`;
           const prevTierKey = `eduflow_tier_${user?.email}`;
           const prevLimit = parseInt(localStorage.getItem(prevLimitKey) || '1');
@@ -453,13 +455,13 @@ export default function App() {
     );
   }
 
-  // 승인 대기
-  if (userStatus === 'pending') {
+  // 승인 대기 (Deploy 모드 전용)
+  if (!LOCAL_MODE && userStatus === 'pending') {
     return <PendingApproval />;
   }
 
-  // 비활성화 — 재신청 가능
-  if (userStatus === 'inactive') {
+  // 비활성화 — 재신청 가능 (Deploy 모드 전용)
+  if (!LOCAL_MODE && userStatus === 'inactive') {
     const handleReapply = async () => {
       try {
         const token = getAuthToken();
