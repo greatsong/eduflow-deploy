@@ -26,7 +26,10 @@ import { TIER_CONFIG } from '../shared/constants.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 config({ path: path.resolve(__dirname, '..', '.env') }); // 루트 .env 로드
 
-const LOCAL_MODE = process.env.LOCAL_MODE === 'true';
+// LOCAL_MODE 자동 감지: 명시적 설정 또는 Google OAuth 미설정 시 로컬 모드
+const LOCAL_MODE = process.env.LOCAL_MODE === 'true'
+  || !process.env.GOOGLE_CLIENT_ID
+  || process.env.GOOGLE_CLIENT_ID === 'your-google-client-id.apps.googleusercontent.com';
 
 const app = express();
 const PORT = process.env.PORT || 7829;
