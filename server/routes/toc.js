@@ -12,6 +12,7 @@ import { ConversationManager } from '../services/conversationManager.js';
 import { ProgressManager } from '../services/progressManager.js';
 import { TokenUsageManager } from '../services/tokenUsageManager.js';
 import { sanitizeId } from '../middleware/sanitize.js';
+import { registerSSE } from '../services/sseManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = process.env.PROJECTS_DIR || join(__dirname, '..', '..', 'projects');
@@ -52,6 +53,9 @@ router.post('/generate', requireApiKey, requireModelAccess, asyncHandler(async (
   const { model, maxTokens } = req.body;
   const projPath = projectPath(req.params.id);
 
+  const sse = registerSSE(req, res);
+  if (!sse.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
+
   // SSE 헤더
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -84,7 +88,7 @@ router.post('/generate', requireApiKey, requireModelAccess, asyncHandler(async (
     const tocData = await tg.generate(
       referencesContent,
       directionSummary,
-      model || 'claude-opus-4-5-20251101',
+      model || 'claude-opus-4-7',
       maxTokens || 16384,
       res
     );
@@ -222,6 +226,9 @@ router.post('/parse-md', requireApiKey, requireModelAccess, asyncHandler(async (
   }
 
   const projPath = projectPath(req.params.id);
+
+  const sse = registerSSE(req, res);
+  if (!sse.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
 
   // SSE 헤더
   res.setHeader('Content-Type', 'text/event-stream');
