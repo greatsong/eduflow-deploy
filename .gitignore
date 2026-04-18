@@ -13,3 +13,12 @@ projects/*/
 
 # 베타 설정
 beta_config.json
+
+# 런타임 데이터 (사용자 레지스트리·토큰 사용 로그 등 개인정보 보호)
+data/
+
+# 에이전트 스킬 메타
+.agents/
+
+# 세션 인계용 메모 (리포 유입 차단)
+NEXT_SESSION_*.md
