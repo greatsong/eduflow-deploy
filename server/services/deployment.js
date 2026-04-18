@@ -1,9 +1,10 @@
-import { readFile, writeFile, readdir, stat, mkdir, unlink, copyFile } from 'fs/promises';
+import { readFile, writeFile, readdir, stat, mkdir, unlink, copyFile, rm, cp } from 'fs/promises';
 import { join, dirname, relative } from 'path';
 import { existsSync, createReadStream } from 'fs';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
 import { markdownToDocx } from './docxGenerator.js';
+import { generateStarlightProject } from './starlightGenerator.js';
 
 // 포트폴리오 저장소 (서버 관리용)
 const PORTFOLIO_REPO_OWNER = 'greatsong';
@@ -95,15 +96,20 @@ export class Deployment {
 
   /**
    * 도구 설치 상태 전체 확인
+   *
+   * Starlight 빌드에 필요한 node/npm도 체크한다.
+   * 기본 테마는 Starlight이므로 이 둘이 없으면 빌드 불가.
    */
   async checkTools() {
-    const [mkdocs, pandoc, git, gh] = await Promise.all([
+    const [mkdocs, pandoc, git, gh, node, npm] = await Promise.all([
       this.checkTool('mkdocs'),
       this.checkTool('pandoc'),
       this.checkTool('git'),
       this.checkTool('gh'),
+      this.checkTool('node'),
+      this.checkTool('npm'),
     ]);
-    return { mkdocs, pandoc, git, gh };
+    return { mkdocs, pandoc, git, gh, node, npm };
   }
 
   /**
@@ -450,9 +456,35 @@ ${navYaml}`;
   }
 
   /**
-   * MkDocs 빌드
+   * 사이트 빌드 (테마 디스패처)
+   *
+   * theme 옵션:
+   *  - 'starlight' (기본): Astro Starlight으로 빌드. node/npm 필요.
+   *  - 'mkdocs': MkDocs Material (레거시). mkdocs CLI 필요.
+   *
+   * siteUrl/basePath는 Starlight의 astro.config.mjs에 주입된다 (GitHub Pages용).
    */
-  async buildWebsite() {
+  async buildWebsite(opts = {}) {
+    const {
+      theme = 'starlight',
+      siteName,
+      creator,
+      colorTheme,
+      accentColor,
+      siteUrl,
+      basePath,
+    } = opts;
+
+    if (theme === 'starlight') {
+      return this._buildStarlight({ siteName, creator, colorTheme, accentColor, siteUrl, basePath });
+    }
+    return this._buildMkdocs();
+  }
+
+  /**
+   * MkDocs Material 빌드 (레거시)
+   */
+  async _buildMkdocs() {
     try {
       const { cmd, args } = await this._resolveCmd('mkdocs');
       const result = await execa(cmd, [...args, 'build'], {
@@ -460,9 +492,105 @@ ${navYaml}`;
         timeout: 120000,
         shell: true,
       });
-      return { success: true, message: '빌드 성공', stdout: result.stdout };
+      return { success: true, theme: 'mkdocs', message: '빌드 성공', stdout: result.stdout };
     } catch (e) {
-      return { success: false, message: e.shortMessage || e.message, error: e.stderr };
+      return { success: false, theme: 'mkdocs', message: e.shortMessage || e.message, error: e.stderr };
+    }
+  }
+
+  /**
+   * Astro Starlight 빌드 (기본)
+   *
+   * 흐름:
+   *  1) starlightGenerator로 projectPath/.starlight-build/ 소스 트리 생성
+   *  2) astro.config.mjs의 __SITE__, __BASE__ placeholder 치환
+   *  3) 최초 1회 npm install (node_modules 있으면 재활용)
+   *  4) npx astro build → dist/
+   *  5) dist/ → projectPath/site/ 로 교체
+   *  6) .nojekyll 생성 (GitHub Pages의 _astro/ 폴더 차단 방지)
+   *
+   * siteUrl 예: 'https://greatsong.github.io'
+   * basePath 예: '/my-project/'  (반드시 슬래시 포함)
+   */
+  async _buildStarlight({ siteName, creator, colorTheme, accentColor, siteUrl = '', basePath = '/' } = {}) {
+    try {
+      // 1) 소스 트리 생성
+      const result = await generateStarlightProject({
+        projectPath: this.projectPath,
+        siteName,
+        creator,
+        colorTheme,
+        accentColor,
+        basePath, // index.md/404.md 내부 링크에 prefix로 박아 넣기 위해 전달
+      });
+
+      // 2) placeholder 치환 (astro.config.mjs의 __SITE__ / __BASE__ 모두)
+      const configPath = join(result.buildDir, 'astro.config.mjs');
+      let cfg = await readFile(configPath, 'utf-8');
+      cfg = cfg.replaceAll('__SITE__', siteUrl).replaceAll('__BASE__', basePath);
+      await writeFile(configPath, cfg, 'utf-8');
+
+      // 3) npm install (node_modules 없을 때만)
+      const nodeModulesPath = join(result.buildDir, 'node_modules');
+      if (!existsSync(nodeModulesPath)) {
+        await execa('npm', ['install', '--no-audit', '--no-fund', '--prefer-offline'], {
+          cwd: result.buildDir,
+          timeout: 600000,
+          stdio: 'pipe',
+          shell: true,
+        });
+      }
+
+      // 4) astro build
+      const build = await execa('npx', ['astro', 'build'], {
+        cwd: result.buildDir,
+        timeout: 600000,
+        stdio: 'pipe',
+        shell: true,
+      });
+
+      // 5) dist/ → site/ 교체
+      const distDir = join(result.buildDir, 'dist');
+      if (!existsSync(distDir)) {
+        throw new Error('astro build 후 dist/ 폴더가 없습니다');
+      }
+      await rm(this.sitePath, { recursive: true, force: true });
+      await cp(distDir, this.sitePath, { recursive: true });
+
+      // 6) .nojekyll (GitHub Pages 호환)
+      await writeFile(join(this.sitePath, '.nojekyll'), '', 'utf-8');
+
+      // 7) 빌드 캐시 정리 — Fly Volume 용량 보호.
+      //    generateStarlightProject가 매번 buildDir을 rm -rf 후 재생성하므로
+      //    캐시를 남겨도 재활용되지 않는다. site/로 복사가 끝났으니 삭제 안전.
+      //    .starlight-build/ 전체(~200MB의 node_modules 포함) 제거.
+      let cleanupSavedBytes = 0;
+      try {
+        const before = await import('fs/promises').then((m) => m.stat(result.buildDir)).catch(() => null);
+        await rm(result.buildDir, { recursive: true, force: true });
+        if (before) cleanupSavedBytes = before.size || 0;
+      } catch (cleanupErr) {
+        // 청소 실패는 빌드 결과를 망치지 않도록 swallow
+        console.warn('[buildStarlight] 빌드 캐시 정리 실패(무시):', cleanupErr.message);
+      }
+
+      return {
+        success: true,
+        theme: 'starlight',
+        message: `Starlight 빌드 완료 (${result.chapterCount}개 챕터, ${result.imageCount}개 이미지)`,
+        chapterCount: result.chapterCount,
+        imageCount: result.imageCount,
+        stdout: build.stdout?.slice(-2000) || '',
+        cleanupSavedBytes,
+      };
+    } catch (e) {
+      // 실패 시에는 buildDir을 남겨둬서 디버깅 가능하도록 한다.
+      return {
+        success: false,
+        theme: 'starlight',
+        message: e.shortMessage || e.message,
+        error: e.stderr?.slice(-2000) || e.stack,
+      };
     }
   }
 

@@ -197,6 +197,10 @@ export class ChapterGenerator {
     this._statusWriteTimer = null;
     this._lastStatusWrite = 0;
     this._pendingStatusData = null;
+
+    // 참고자료 캐시 (배치 생성 시 재파싱 방지)
+    this._referencesCache = null;
+    this._referencesCacheKey = null;
   }
 
   async init() {
@@ -656,28 +660,116 @@ export class ChapterGenerator {
     return readFile(file, 'utf-8');
   }
 
+  /**
+   * 참고자료 폴더의 현재 상태(파일명+크기+mtime)를 기반으로 캐시 키를 계산.
+   * 배치 생성 중 파일이 바뀌지 않으면 재파싱 없이 캐시 사용.
+   */
+  async _computeReferencesCacheKey() {
+    if (!existsSync(this.referencesPath)) return 'empty';
+    try {
+      const { readdir, stat } = await import('fs/promises');
+      const entries = await readdir(this.referencesPath);
+      const parts = [];
+      for (const name of entries.sort()) {
+        if (name.startsWith('.')) continue;
+        try {
+          const s = await stat(join(this.referencesPath, name));
+          if (s.isFile()) parts.push(`${name}:${s.size}:${s.mtimeMs}`);
+        } catch { /* skip */ }
+      }
+      return parts.join('|') || 'empty';
+    } catch {
+      return 'error';
+    }
+  }
+
   async _loadReferences() {
     if (!existsSync(this.referencesPath)) return [];
 
-    // ReferenceManager를 사용하여 모든 포맷(PDF, DOCX, XLSX, HTML, HWP 등) 처리
+    // 캐시 체크 — 동일 세션 내 배치 생성에서 재파싱 방지
+    const cacheKey = await this._computeReferencesCacheKey();
+    if (this._referencesCache && this._referencesCacheKey === cacheKey) {
+      return this._referencesCache;
+    }
+
+    // ReferenceManager를 사용하여 모든 포맷을 병렬 파싱
     const { ReferenceManager } = await import('./referenceManager.js');
     const rm = new ReferenceManager(this.projectPath);
-    const files = await rm.listFiles();
+    const parsed = await rm.loadAllParsed({ concurrency: 4 });
     const refs = [];
 
-    for (const file of files) {
-      try {
-        const result = await rm.readFileContent(file.name);
-        if (result.status === 'ok' && result.content) {
-          refs.push(`[${file.name}]\n${result.content}`);
-        } else if (result.status === 'parse_error') {
-          console.warn(`참고자료 파싱 실패 (${file.name}): ${result.error || '알 수 없는 오류'}`);
-        }
-      } catch (e) {
-        console.warn(`참고자료 로드 실패 (${file.name}):`, e.message);
+    for (const r of parsed) {
+      if (r.status === 'ok' && r.content) {
+        refs.push(`[${r.name}]\n${r.content}`);
+      } else if (r.status === 'parse_error') {
+        console.warn(`참고자료 파싱 실패 (${r.name}): ${r.error || '알 수 없는 오류'}`);
       }
     }
+
+    this._referencesCache = refs;
+    this._referencesCacheKey = cacheKey;
     return refs;
+  }
+
+  /**
+   * 긴 참고자료를 챕터 관련 구간으로 슬라이싱해 토큰을 절약한다.
+   * - 임계 길이 이하: 그대로 반환
+   * - 초과: 문단 단위로 분할 → 챕터 키워드와 매칭되는 상위 문단만 추출
+   */
+  _sliceReferenceForChapter(ref, searchTerms, maxChars = 8000) {
+    if (!ref || ref.length <= maxChars) return ref;
+    if (!searchTerms || searchTerms.size === 0) return ref.slice(0, maxChars) + '\n\n...(이하 생략)';
+
+    // 헤더 추출: "[파일명]\n" 유지
+    const headerMatch = ref.match(/^\[[^\]]+\]\n/);
+    const header = headerMatch ? headerMatch[0] : '';
+    const body = header ? ref.slice(header.length) : ref;
+
+    // 문단 분할 (빈 줄 기준)
+    const paragraphs = body.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
+    if (paragraphs.length <= 1) {
+      return header + body.slice(0, maxChars) + '\n\n...(이하 생략)';
+    }
+
+    // 문단별 점수 매기기
+    const scored = paragraphs.map((p, idx) => {
+      const lower = p.toLowerCase();
+      let score = 0;
+      for (const term of searchTerms) {
+        if (lower.includes(term)) score += 1;
+      }
+      return { idx, score, text: p };
+    });
+
+    // 점수 내림차순 → 원래 순서 유지하며 한도까지 채움
+    const sorted = [...scored].sort((a, b) => b.score - a.score || a.idx - b.idx);
+    const picked = new Set();
+    let total = 0;
+    for (const s of sorted) {
+      if (total + s.text.length > maxChars) continue;
+      picked.add(s.idx);
+      total += s.text.length;
+      if (total >= maxChars * 0.9) break;
+    }
+
+    // 원래 순서대로 재조립
+    const selected = scored.filter((s) => picked.has(s.idx)).map((s) => s.text);
+    if (selected.length === 0) return header + body.slice(0, maxChars) + '\n\n...(이하 생략)';
+
+    return header + selected.join('\n\n') + '\n\n...(관련도 낮은 구간 생략됨)';
+  }
+
+  _extractSearchTerms(chapterTitle, outline, partContext) {
+    const terms = new Set();
+    for (const text of [chapterTitle, partContext, (outline || '').slice(0, 1000)]) {
+      if (!text) continue;
+      const words = String(text).replace(/[,.:*\-_#\[\]"'()]/g, ' ').split(/\s+/);
+      for (const word of words) {
+        const clean = word.trim();
+        if (clean.length >= 2) terms.add(clean.toLowerCase());
+      }
+    }
+    return terms;
   }
 
   _truncateReferences(references, maxChars) {
@@ -801,6 +893,18 @@ export class ChapterGenerator {
 
     references = this._sortReferencesByRelevance(references, chapterTitle, outline, partContext);
 
+    // 긴 참고자료는 챕터 관련 구간으로 슬라이싱해 토큰 절약
+    const LONG_REF_THRESHOLD = 8000; // 문자 단위
+    const hasLongRef = references.some((r) => r.length > LONG_REF_THRESHOLD);
+    if (hasLongRef) {
+      const searchTerms = this._extractSearchTerms(chapterTitle, outline, partContext);
+      references = references.map((ref) =>
+        ref.length > LONG_REF_THRESHOLD
+          ? this._sliceReferenceForChapter(ref, searchTerms, LONG_REF_THRESHOLD)
+          : ref
+      );
+    }
+
     const outlineTokens = this._estimateTokens(outline || '');
     let refsTextFull = references.length ? references.join('\n\n---\n\n') : '';
     const refsTokens = this._estimateTokens(refsTextFull);
@@ -897,6 +1001,19 @@ ${courseInfo}
 5. **박스/인용/표는 강조가 필요한 곳에만.** 분량 채우기용으로 남발하지 마세요.
 6. **분량 부족 시 덜 중요한 항목을 생략.** 문장이 중간에 끊기는 것보다 한 섹션이 빠지는 게 낫습니다.
 7. **핵심을 먼저, 부연은 나중에.** "하지만…", "단, …", "참고로…" 같은 부연은 최소한만.
+
+## ✏️ Markdown 문법 안전 규칙 (렌더링 깨짐 방지)
+
+생성되는 Markdown이 HTML로 렌더될 때 문법 충돌로 깨지는 것을 막기 위해, 아래를 반드시 지키세요.
+
+1. **숫자 범위 표기는 하이픈(-) 또는 "에서" 사용.** 절대 틸드(~) 금지.
+   - ❌ \`15~19점\`, \`1~2개\`, \`3~5분\` (GFM 파서가 \`~...~\`를 취소선으로 해석 → "19점: 1" 같은 부분이 취소선으로 렌더됨)
+   - ✅ \`15-19점\`, \`1-2개\`, \`3-5분\`, 또는 "15점에서 19점"
+2. **의도적 취소선이 아니면 \`~~\`(이중 틸드) 사용 금지.** 음악 음표 표기 등 예외 상황에도 코드 블록 안에 넣으세요.
+3. **밑줄 \`_\` 도 두 번 인접하면 기울임으로 해석됨.** 플레이스홀더는 \`________\` 대신 \`______\` (짝수 개) 또는 "(  )" 사용.
+4. **볼드 \`**X**\` 안에 다시 \`**\`를 쓰지 말 것.** 중첩은 파서가 깨뜨립니다.
+5. **HTML 태그를 쓰려면 양 끝이 정확히 맞아야 함.** \`<details><summary>...</summary>...</details>\`처럼 짝이 틀리면 페이지 전체 렌더가 틀어집니다.
+6. **파이프(\`|\`)가 본문에 있으면 Markdown 표로 오해됨.** 본문에서 "컬럼 A | 컬럼 B" 같은 표현은 "컬럼 A, 컬럼 B"로 바꾸거나 코드 블록에 넣으세요.
 
 ## 🏫 교단 즉시성 규칙 (교사용 지도서 스타일의 경우 필수)
 

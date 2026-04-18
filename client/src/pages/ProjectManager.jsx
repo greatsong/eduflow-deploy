@@ -208,6 +208,8 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [hows, setHows] = useState([]);
   const [features, setFeatures] = useState([]);
   const [compatibility, setCompatibility] = useState({ warnings: [] });
+  const [defaultTocPrompt, setDefaultTocPrompt] = useState('');
+  const [defaultChapterPrompt, setDefaultChapterPrompt] = useState('');
 
   // 새 프로젝트 폼 변경 시 자동 임시저장
   useEffect(() => {
@@ -286,6 +288,25 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       prevSelectedWhat.current = selectedWhat;
     }
   }, [selectedWhat, selectedHow, whats, hows, features]);
+
+  // v2: WHAT/HOW/FEATURES 변경 시 디폴트 프롬프트 로드
+  useEffect(() => {
+    if (templateMode !== 'v2' || !selectedWhat || !selectedHow) {
+      setDefaultTocPrompt('');
+      setDefaultChapterPrompt('');
+      return;
+    }
+    apiFetch('/api/projects/templates/compose-preview', {
+      method: 'POST',
+      body: JSON.stringify({ what_id: selectedWhat, how_id: selectedHow, features: selectedFeatures }),
+    }).then((data) => {
+      setDefaultTocPrompt(data.tocAddition || '');
+      setDefaultChapterPrompt(data.chapterAddition || '');
+      // 사용자가 직접 수정하지 않았으면 디폴트로 채움
+      if (!tocPromptDirty.current) setTocPrompt(data.tocAddition || '');
+      if (!chapterPromptDirty.current) setChapterPrompt(data.chapterAddition || '');
+    }).catch(() => {});
+  }, [selectedWhat, selectedHow, selectedFeatures, templateMode]);
 
   // 기존 프로젝트 선택 시 정보 로드
   useEffect(() => {
@@ -727,33 +748,55 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
             {showPromptEditor && (
               <div className="mt-3 space-y-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    목차 생성 프롬프트 추가 지침
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      목차 생성 프롬프트
+                    </label>
+                    {defaultTocPrompt && tocPrompt !== defaultTocPrompt && (
+                      <button
+                        type="button"
+                        onClick={() => { tocPromptDirty.current = false; setTocPrompt(defaultTocPrompt); }}
+                        className="text-xs text-emerald-600 hover:text-emerald-800"
+                      >
+                        기본값 복원
+                      </button>
+                    )}
+                  </div>
                   <textarea
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed bg-white"
                     rows={8}
                     value={tocPrompt}
                     onChange={(e) => { tocPromptDirty.current = true; setTocPrompt(e.target.value); }}
-                    placeholder="목차 생성 시 AI에게 전달될 추가 지침..."
+                    placeholder={defaultTocPrompt ? '' : '교육모델/기능을 선택하면 기본 프롬프트가 자동으로 채워집니다'}
                   />
                   <p className="mt-1 text-xs text-gray-400">
-                    목차 자동 생성 시 이 지침이 프롬프트에 추가됩니다
+                    {tocPrompt ? '이 프롬프트가 목차 생성 시 AI에게 전달됩니다 (직접 편집 가능)' : '교육모델과 기능 옵션을 선택하면 기본 프롬프트가 자동 생성됩니다'}
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    챕터 작성 프롬프트 추가 지침
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      챕터 작성 프롬프트
+                    </label>
+                    {defaultChapterPrompt && chapterPrompt !== defaultChapterPrompt && (
+                      <button
+                        type="button"
+                        onClick={() => { chapterPromptDirty.current = false; setChapterPrompt(defaultChapterPrompt); }}
+                        className="text-xs text-emerald-600 hover:text-emerald-800"
+                      >
+                        기본값 복원
+                      </button>
+                    )}
+                  </div>
                   <textarea
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed bg-white"
                     rows={8}
                     value={chapterPrompt}
                     onChange={(e) => { chapterPromptDirty.current = true; setChapterPrompt(e.target.value); }}
-                    placeholder="챕터 작성 시 AI에게 전달될 추가 지침..."
+                    placeholder={defaultChapterPrompt ? '' : '교육모델/기능을 선택하면 기본 프롬프트가 자동으로 채워집니다'}
                   />
                   <p className="mt-1 text-xs text-gray-400">
-                    각 챕터 생성 시 이 지침이 프롬프트에 추가됩니다
+                    {chapterPrompt ? '이 프롬프트가 각 챕터 생성 시 AI에게 전달됩니다 (직접 편집 가능)' : '교육모델과 기능 옵션을 선택하면 기본 프롬프트가 자동 생성됩니다'}
                   </p>
                 </div>
               </div>
@@ -1037,6 +1080,8 @@ function PromptSettingsTab({ projectId }) {
   const [templateInfo, setTemplateInfo] = useState(null);
   const [tocPrompt, setTocPrompt] = useState('');
   const [chapterPrompt, setChapterPrompt] = useState('');
+  const [defaultTocPrompt, setDefaultTocPrompt] = useState('');
+  const [defaultChapterPrompt, setDefaultChapterPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -1049,6 +1094,20 @@ function PromptSettingsTab({ projectId }) {
         setTemplateInfo(data);
         setTocPrompt(data.toc_prompt_addition || '');
         setChapterPrompt(data.chapter_prompt_addition || '');
+        // v2 프로젝트: 디폴트 프롬프트 로드 (기본값 복원용)
+        if (data.version === 2 && data.what_id && data.how_id) {
+          apiFetch('/api/projects/templates/compose-preview', {
+            method: 'POST',
+            body: JSON.stringify({
+              what_id: data.what_id,
+              how_id: data.how_id,
+              features: data.features || [],
+            }),
+          }).then((preview) => {
+            setDefaultTocPrompt(preview.tocAddition || '');
+            setDefaultChapterPrompt(preview.chapterAddition || '');
+          }).catch(() => {});
+        }
       })
       .catch(() => {
         setTemplateInfo({ exists: false });
@@ -1087,7 +1146,7 @@ function PromptSettingsTab({ projectId }) {
     <div className="max-w-3xl">
       <h3 className="text-lg font-semibold mb-4">⚙️ 프롬프트 설정</h3>
       <p className="text-sm text-gray-500 mb-6">
-        목차 생성 및 챕터 작성 시 AI에게 전달되는 추가 지침을 설정합니다.
+        교육모델과 기능 옵션에 따라 자동 생성된 프롬프트입니다. 직접 편집하여 AI의 생성 결과를 조정할 수 있습니다.
         {templateInfo?.template_name && (
           <span className="ml-2 text-emerald-600">
             (템플릿: {templateInfo.template_name})
@@ -1097,34 +1156,56 @@ function PromptSettingsTab({ projectId }) {
 
       <div className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            목차 생성 프롬프트 추가 지침
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-700">
+              목차 생성 프롬프트
+            </label>
+            {defaultTocPrompt && tocPrompt !== defaultTocPrompt && (
+              <button
+                type="button"
+                onClick={() => setTocPrompt(defaultTocPrompt)}
+                className="text-xs text-emerald-600 hover:text-emerald-800"
+              >
+                기본값 복원
+              </button>
+            )}
+          </div>
           <textarea
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed"
             rows={10}
             value={tocPrompt}
             onChange={(e) => setTocPrompt(e.target.value)}
-            placeholder="목차 생성 시 AI에게 전달될 추가 지침..."
+            placeholder="교육모델에 따른 기본 프롬프트가 표시됩니다"
           />
           <p className="mt-1 text-xs text-gray-400">
-            AI가 목차를 자동 생성할 때 이 지침이 프롬프트에 추가됩니다
+            이 프롬프트가 목차 생성 시 AI에게 전달됩니다 (직접 편집 가능)
           </p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            챕터 작성 프롬프트 추가 지침
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-700">
+              챕터 작성 프롬프트
+            </label>
+            {defaultChapterPrompt && chapterPrompt !== defaultChapterPrompt && (
+              <button
+                type="button"
+                onClick={() => setChapterPrompt(defaultChapterPrompt)}
+                className="text-xs text-emerald-600 hover:text-emerald-800"
+              >
+                기본값 복원
+              </button>
+            )}
+          </div>
           <textarea
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono leading-relaxed"
             rows={10}
             value={chapterPrompt}
             onChange={(e) => setChapterPrompt(e.target.value)}
-            placeholder="챕터 작성 시 AI에게 전달될 추가 지침..."
+            placeholder="교육모델에 따른 기본 프롬프트가 표시됩니다"
           />
           <p className="mt-1 text-xs text-gray-400">
-            AI가 각 챕터를 작성할 때 이 지침이 프롬프트에 추가됩니다
+            이 프롬프트가 각 챕터 생성 시 AI에게 전달됩니다 (직접 편집 가능)
           </p>
         </div>
 
@@ -1159,12 +1240,19 @@ function QuickStartTab({ projectId }) {
   // AI 분석 모드 state
   const [mdContent, setMdContent] = useState('');
   const [fileName, setFileName] = useState('');
+  const [fileObj, setFileObj] = useState(null); // PDF/DOCX 등 바이너리 파일용
+  const [fileIsBinary, setFileIsBinary] = useState(false);
   const [saveAsRef, setSaveAsRef] = useState(true);
   const [model, setModel] = useState('claude-sonnet-4-6');
   const [models, setModels] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [logs, setLogs] = useState([]);
   const [done, setDone] = useState(false);
+
+  // 빠른 시작에서 지원하는 파일 포맷
+  const SUPPORTED_EXTS = '.md,.txt,.markdown,.pdf,.docx,.xlsx,.xls,.html,.htm,.hwp,.hwpx,.csv,.json';
+  const TEXT_EXTS = ['.md', '.txt', '.markdown', '.text', '.csv', '.json', '.html', '.htm'];
+  const BINARY_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB — multer 한도와 동일
 
   // 직접 입력 모드 state
   const [discussionText, setDiscussionText] = useState('');
@@ -1193,30 +1281,72 @@ function QuickStartTab({ projectId }) {
 
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (ev) => setMdContent(ev.target.result);
-    reader.readAsText(file);
     e.target.value = '';
+    if (!file) return;
+
+    const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+
+    // 크기 검증
+    if (file.size > BINARY_SIZE_LIMIT) {
+      setLogs((prev) => [...prev, `❌ 파일이 너무 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). 50MB 이하로 분할해주세요.`]);
+      return;
+    }
+
+    setFileName(file.name);
+    setMdContent('');
+    setFileObj(null);
+
+    if (TEXT_EXTS.includes(ext)) {
+      // 텍스트 계열 — 기존처럼 클라이언트에서 미리보기
+      setFileIsBinary(false);
+      const reader = new FileReader();
+      reader.onload = (ev) => setMdContent(ev.target.result);
+      reader.readAsText(file);
+    } else {
+      // 바이너리 (PDF/DOCX/HWP/XLSX 등) — 서버로 직접 업로드해 파싱
+      setFileIsBinary(true);
+      setFileObj(file);
+    }
   };
 
   const handleProcess = async () => {
-    if (!projectId || !mdContent) return;
+    if (!projectId) return;
+    if (!fileIsBinary && !mdContent) return;
+    if (fileIsBinary && !fileObj) return;
+
     setProcessing(true);
     setLogs([]);
     setDone(false);
 
     try {
-      await apiStreamPost(
-        `/api/projects/${projectId}/toc/parse-md`,
-        { content: mdContent, model, saveAsReference: saveAsRef },
-        {
-          onProgress: (data) => setLogs((prev) => [...prev, data.message]),
-          onDone: () => { setProcessing(false); setDone(true); refreshProgress(); },
-          onError: (err) => { setLogs((prev) => [...prev, `❌ 오류: ${err.message}`]); setProcessing(false); },
-        }
-      );
+      if (fileIsBinary) {
+        // 새 엔드포인트 — 서버에서 파싱 후 TOC 생성
+        const formData = new FormData();
+        formData.append('file', fileObj);
+        formData.append('model', model);
+        formData.append('saveAsReference', String(saveAsRef));
+
+        await apiStreamPost(
+          `/api/projects/${projectId}/toc/parse-file`,
+          formData,
+          {
+            onProgress: (data) => setLogs((prev) => [...prev, data.message]),
+            onDone: () => { setProcessing(false); setDone(true); refreshProgress(); },
+            onError: (err) => { setLogs((prev) => [...prev, `❌ 오류: ${err.message}`]); setProcessing(false); },
+          }
+        );
+      } else {
+        // 기존 MD/TXT 경로
+        await apiStreamPost(
+          `/api/projects/${projectId}/toc/parse-md`,
+          { content: mdContent, model, saveAsReference: saveAsRef },
+          {
+            onProgress: (data) => setLogs((prev) => [...prev, data.message]),
+            onDone: () => { setProcessing(false); setDone(true); refreshProgress(); },
+            onError: (err) => { setLogs((prev) => [...prev, `❌ 오류: ${err.message}`]); setProcessing(false); },
+          }
+        );
+      }
     } catch (err) {
       setLogs((prev) => [...prev, `❌ 오류: ${err.message}`]);
       setProcessing(false);
@@ -1295,22 +1425,30 @@ function QuickStartTab({ projectId }) {
                 onClick={() => fileInputRef.current?.click()}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium cursor-pointer hover:bg-emerald-700"
               >
-                📤 MD/TXT 파일 선택
+                📤 파일 선택 (MD/TXT/PDF/DOCX/HWP/XLSX 등)
               </span>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".md,.txt,.markdown"
+                accept={SUPPORTED_EXTS}
                 onChange={handleFileUpload}
                 className="hidden"
               />
             </label>
-            {fileName && (
+            {fileName && !fileIsBinary && (
               <p className="text-sm text-green-600 mt-1">📄 {fileName} ({mdContent.length.toLocaleString()}자)</p>
             )}
+            {fileName && fileIsBinary && fileObj && (
+              <p className="text-sm text-green-600 mt-1">
+                📄 {fileName} ({(fileObj.size / 1024).toFixed(0)}KB) — 서버에서 파싱됩니다
+              </p>
+            )}
+            <p className="text-xs text-gray-500 mt-1">
+              * PDF/DOCX 등 바이너리 파일은 서버에서 텍스트를 추출해 목차를 자동 생성합니다. 최대 50MB.
+            </p>
           </div>
 
-          {mdContent && (
+          {mdContent && !fileIsBinary && (
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">미리보기</label>
               <textarea
@@ -1337,7 +1475,7 @@ function QuickStartTab({ projectId }) {
 
           <button
             onClick={handleProcess}
-            disabled={processing || !mdContent}
+            disabled={processing || (!fileIsBinary && !mdContent) || (fileIsBinary && !fileObj)}
             className="w-full py-3 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
           >
             {processing ? '분석 중...' : '🚀 목차 분석 & 빠른 시작'}

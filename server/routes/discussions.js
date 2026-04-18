@@ -12,6 +12,7 @@ import { ProgressManager } from '../services/progressManager.js';
 import { TOCGenerator } from '../services/tocGenerator.js';
 import { TokenUsageManager } from '../services/tokenUsageManager.js';
 import { sanitizeId } from '../middleware/sanitize.js';
+import { registerSSE } from '../services/sseManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = process.env.PROJECTS_DIR || join(__dirname, '..', '..', 'projects');
@@ -64,6 +65,12 @@ router.post('/:step/summarize', requireApiKey, requireModelAccess, asyncHandler(
   const projPath = projectPath(req.params.id);
   const step = req.params.step;
 
+  // SSE 연결 등록 (사용자당 제한)
+  const sse = registerSSE(req, res);
+  if (!sse.ok) {
+    return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다. 다른 탭을 닫고 다시 시도해주세요.' });
+  }
+
   // SSE 헤더
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -104,6 +111,12 @@ router.post('/:step/chat', requireApiKey, requireModelAccess, asyncHandler(async
   const { message, model, messages: clientMessages } = req.body;
   const projPath = projectPath(req.params.id);
   const step = req.params.step;
+
+  // SSE 연결 등록 (사용자당 제한)
+  const sse = registerSSE(req, res);
+  if (!sse.ok) {
+    return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다. 다른 탭을 닫고 다시 시도해주세요.' });
+  }
 
   // SSE 헤더
   res.setHeader('Content-Type', 'text/event-stream');

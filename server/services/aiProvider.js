@@ -10,6 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
+import { acquire, release } from './rateLimiter.js';
 
 // 프로바이더별 기본 API 키 환경변수 매핑
 const ENV_KEY_MAP = {
@@ -49,17 +50,24 @@ export function resolveApiKey(provider, keys = {}) {
  * @returns {{ content: string, inputTokens: number, outputTokens: number, stopReason: string }}
  */
 export async function chat({ provider, apiKey, model, messages, system, maxTokens = 2048 }) {
-  switch (provider) {
-    case 'anthropic':
-      return _anthropicChat({ apiKey, model, messages, system, maxTokens });
-    case 'openai':
-      return _openaiChat({ apiKey, model, messages, system, maxTokens, baseURL: undefined });
-    case 'google':
-      return _googleChat({ apiKey, model, messages, system, maxTokens });
-    case 'upstage':
-      return _openaiChat({ apiKey, model, messages, system, maxTokens, baseURL: 'https://api.upstage.ai/v1/solar' });
-    default:
-      throw new Error(`지원하지 않는 프로바이더: ${provider}`);
+  await acquire(provider);
+  try {
+    let result;
+    switch (provider) {
+      case 'anthropic':
+        result = await _anthropicChat({ apiKey, model, messages, system, maxTokens }); break;
+      case 'openai':
+        result = await _openaiChat({ apiKey, model, messages, system, maxTokens, baseURL: undefined }); break;
+      case 'google':
+        result = await _googleChat({ apiKey, model, messages, system, maxTokens }); break;
+      case 'upstage':
+        result = await _openaiChat({ apiKey, model, messages, system, maxTokens, baseURL: 'https://api.upstage.ai/v1/solar' }); break;
+      default:
+        throw new Error(`지원하지 않는 프로바이더: ${provider}`);
+    }
+    return result;
+  } finally {
+    release(provider);
   }
 }
 
@@ -71,17 +79,24 @@ export async function chat({ provider, apiKey, model, messages, system, maxToken
  * @returns {{ content: string, inputTokens: number, outputTokens: number, stopReason: string }}
  */
 export async function streamChat({ provider, apiKey, model, messages, system, maxTokens = 2048, res = null, onText = null }) {
-  switch (provider) {
-    case 'anthropic':
-      return _anthropicStream({ apiKey, model, messages, system, maxTokens, res, onText });
-    case 'openai':
-      return _openaiStream({ apiKey, model, messages, system, maxTokens, res, onText, baseURL: undefined });
-    case 'google':
-      return _googleStream({ apiKey, model, messages, system, maxTokens, res, onText });
-    case 'upstage':
-      return _openaiStream({ apiKey, model, messages, system, maxTokens, res, onText, baseURL: 'https://api.upstage.ai/v1/solar' });
-    default:
-      throw new Error(`지원하지 않는 프로바이더: ${provider}`);
+  await acquire(provider);
+  try {
+    let result;
+    switch (provider) {
+      case 'anthropic':
+        result = await _anthropicStream({ apiKey, model, messages, system, maxTokens, res, onText }); break;
+      case 'openai':
+        result = await _openaiStream({ apiKey, model, messages, system, maxTokens, res, onText, baseURL: undefined }); break;
+      case 'google':
+        result = await _googleStream({ apiKey, model, messages, system, maxTokens, res, onText }); break;
+      case 'upstage':
+        result = await _openaiStream({ apiKey, model, messages, system, maxTokens, res, onText, baseURL: 'https://api.upstage.ai/v1/solar' }); break;
+      default:
+        throw new Error(`지원하지 않는 프로바이더: ${provider}`);
+    }
+    return result;
+  } finally {
+    release(provider);
   }
 }
 

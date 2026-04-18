@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { ServerSettings } from '../services/settings.js';
 import { join } from 'path';
 import { TIER_CONFIG, PREMIUM_MODEL_TIERS } from '../../shared/constants.js';
+import { getProviderKeys, pickNextKey } from '../services/apiKeyPool.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'eduflow-default-secret-change-me';
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
@@ -38,15 +39,15 @@ export async function requireApiKey(req, res, next) {
     const settings = await serverSettings.get();
     const adminKeys = settings.adminApiKeys || {};
 
-    // 프로바이더별 키 수집
+    // 프로바이더별 키 수집 (키 풀 라운드로빈 지원)
     const keys = {};
     for (const provider of ['anthropic', 'openai', 'google', 'upstage']) {
       const headerKey = req.headers[`x-${provider}-key`] || '';
       const envKey = process.env[`${provider.toUpperCase()}_API_KEY`] || '';
 
-      // settings.json 키: 관리자이면 모두 사용, 일반 사용자는 shared만
-      const stored = adminKeys[provider];
-      const storedKey = stored?.key && (admin || stored.shared) ? stored.key : '';
+      // settings.json 키: 키 풀에서 라운드로빈 선택
+      const poolKeys = getProviderKeys(adminKeys, provider, admin);
+      const storedKey = poolKeys.length > 0 ? pickNextKey(provider, poolKeys) : '';
 
       keys[provider] = headerKey || storedKey || envKey || '';
     }
@@ -78,12 +79,38 @@ export async function requireApiKey(req, res, next) {
 }
 
 /**
+ * 모델 ID에서 프로바이더 추출
+ */
+function getProviderFromModel(modelId) {
+  if (!modelId) return null;
+  if (modelId.startsWith('claude-')) return 'anthropic';
+  if (modelId.startsWith('gpt-') || modelId.startsWith('o-')) return 'openai';
+  if (modelId.startsWith('gemini-')) return 'google';
+  if (modelId.startsWith('solar-')) return 'upstage';
+  return null;
+}
+
+/**
+ * 사용자가 해당 프로바이더의 본인 키를 헤더로 보냈는지 확인
+ */
+function hasUserOwnKey(req, provider) {
+  if (!provider) return false;
+  // x-anthropic-key, x-openai-key 등 사용자 직접 입력 헤더 확인
+  if (req.headers[`x-${provider}-key`]) return true;
+  // 레거시 호환: x-api-key는 anthropic 본인 키로 취급
+  if (provider === 'anthropic' && req.headers['x-api-key']) return true;
+  return false;
+}
+
+/**
  * 모델 접근 권한 검증 미들웨어
  * 프리미엄 모델은 Pro 이상 등급에서만 사용 가능
+ * 단, 사용자가 해당 프로바이더의 본인 API 키를 직접 입력한 경우 등급 무관 허용
  */
 export async function requireModelAccess(req, res, next) {
   const model = req.body?.model || req.query?.model;
   const models = req.body?.models; // 비교 모드 (모델 ID 배열)
+  const judgeModel = req.body?.judgeModel; // AI 심사위원 모델 (비교 자동 평가)
 
   const userTier = req.userTier || 'starter';
   const tierConfig = TIER_CONFIG[userTier];
@@ -97,12 +124,17 @@ export async function requireModelAccess(req, res, next) {
     const config = await loadModelConfig();
     const modelList = config.models || [];
 
-    // 단일 모델 체크
-    if (model) {
-      const modelEntry = modelList.find(m => m.id === model);
+    // 단일 모델 체크 (model, judgeModel 공통 로직)
+    for (const mid of [model, judgeModel].filter(Boolean)) {
+      const modelEntry = modelList.find(m => m.id === mid);
       if (modelEntry && PREMIUM_MODEL_TIERS.includes(modelEntry.tier)) {
+        // 본인 키를 직접 입력한 경우 허용 (본인 비용)
+        const provider = getProviderFromModel(mid);
+        if (hasUserOwnKey(req, provider)) continue;
+
+        const label = mid === judgeModel ? '심사위원 모델' : '모델';
         return res.status(403).json({
-          message: `${modelEntry.display_name}은(는) Pro 이상 등급에서 사용할 수 있습니다. 현재 등급: ${tierConfig?.labelKo || '스타터'}`,
+          message: `${label} ${modelEntry.display_name}은(는) Pro 이상 등급에서 사용할 수 있습니다. 직접 API 키를 입력하면 등급과 무관하게 사용 가능합니다.`,
           code: 'MODEL_TIER_RESTRICTED',
           requiredTier: 'pro',
           currentTier: userTier,
@@ -115,8 +147,11 @@ export async function requireModelAccess(req, res, next) {
       for (const mid of models) {
         const modelEntry = modelList.find(m => m.id === mid);
         if (modelEntry && PREMIUM_MODEL_TIERS.includes(modelEntry.tier)) {
+          const provider = getProviderFromModel(mid);
+          if (hasUserOwnKey(req, provider)) continue; // 본인 키 있으면 통과
+
           return res.status(403).json({
-            message: `${modelEntry.display_name}은(는) Pro 이상 등급에서 사용할 수 있습니다. 현재 등급: ${tierConfig?.labelKo || '스타터'}`,
+            message: `${modelEntry.display_name}은(는) Pro 이상 등급에서 사용할 수 있습니다. 직접 API 키를 입력하면 등급과 무관하게 사용 가능합니다.`,
             code: 'MODEL_TIER_RESTRICTED',
             requiredTier: 'pro',
             currentTier: userTier,

@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { existsSync } from 'fs';
+import { withLock } from './fileLock.js';
 
 const DEFAULT_SETTINGS = {
   apiMode: 'user',                                          // 'server' | 'user'
@@ -39,18 +40,19 @@ export class ServerSettings {
     }
   }
 
-  /** 설정 업데이트 (부분 업데이트 가능) */
+  /** 설정 업데이트 (부분 업데이트 가능, 뮤텍스로 동시 쓰기 방지) */
   async update(partial) {
-    const current = await this.get();
-    const updated = { ...current, ...partial, updatedAt: new Date().toISOString() };
+    return withLock(this.filePath, async () => {
+      const current = await this.get();
+      const updated = { ...current, ...partial, updatedAt: new Date().toISOString() };
 
-    // 디렉토리 생성
-    const dir = dirname(this.filePath);
-    if (!existsSync(dir)) {
-      await mkdir(dir, { recursive: true });
-    }
+      const dir = dirname(this.filePath);
+      if (!existsSync(dir)) {
+        await mkdir(dir, { recursive: true });
+      }
 
-    await writeFile(this.filePath, JSON.stringify(updated, null, 2), 'utf-8');
-    return updated;
+      await writeFile(this.filePath, JSON.stringify(updated, null, 2), 'utf-8');
+      return updated;
+    });
   }
 }

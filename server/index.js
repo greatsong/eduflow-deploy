@@ -22,6 +22,7 @@ import { requireAuth, requireApproved } from './middleware/auth.js';
 import { sanitizeId } from './middleware/sanitize.js';
 import { UserStore } from './services/userStore.js';
 import { TIER_CONFIG } from '../shared/constants.js';
+import { withLock } from './services/fileLock.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 config({ path: path.resolve(__dirname, '..', '.env') }); // 루트 .env 로드
@@ -283,17 +284,22 @@ if (LOCAL_MODE) {
       const usersFile = path.join(DATA_DIR, 'users.json');
       if (!existsSync(usersFile)) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
 
-      const users = JSON.parse(await rf(usersFile, 'utf-8'));
-      const idx = users.findIndex(u => u.googleId === req.user?.googleId);
-      if (idx < 0) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-      if (users[idx].status !== 'inactive') {
-        return res.status(400).json({ message: '재신청은 비활성화된 계정만 가능합니다.' });
-      }
+      const result = await withLock(usersFile, async () => {
+        const users = JSON.parse(await rf(usersFile, 'utf-8'));
+        const idx = users.findIndex(u => u.googleId === req.user?.googleId);
+        if (idx < 0) return { error: 404, message: '사용자를 찾을 수 없습니다.' };
+        if (users[idx].status !== 'inactive') {
+          return { error: 400, message: '재신청은 비활성화된 계정만 가능합니다.' };
+        }
 
-      users[idx].status = 'pending';
-      users[idx].reappliedAt = new Date().toISOString();
-      await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
-      res.json({ success: true, status: 'pending' });
+        users[idx].status = 'pending';
+        users[idx].reappliedAt = new Date().toISOString();
+        await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
+        return { success: true, status: 'pending' };
+      });
+
+      if (result.error) return res.status(result.error).json({ message: result.message });
+      res.json(result);
     } catch (err) {
       res.status(500).json({ message: err.message });
     }
@@ -305,25 +311,31 @@ if (LOCAL_MODE) {
       const { readFile: rf, writeFile: wf, mkdir: mkd } = await import('fs/promises');
       const usersFile = path.join(DATA_DIR, 'users.json');
       if (!existsSync(DATA_DIR)) await mkd(DATA_DIR, { recursive: true });
-      const users = existsSync(usersFile) ? JSON.parse(await rf(usersFile, 'utf-8')) : [];
-      const idx = users.findIndex(u => u.googleId === req.user?.googleId);
-      if (idx < 0) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
 
-      const { name, affiliation, subjects, region, intro, motivation, topic, expertise, sampleChapter, samplePerspective } = req.body;
-      if (name !== undefined) users[idx].name = name;
-      if (affiliation !== undefined) users[idx].affiliation = affiliation;
-      if (subjects !== undefined) users[idx].subjects = subjects;
-      if (region !== undefined) users[idx].region = region;
-      if (intro !== undefined) users[idx].intro = intro;
-      if (motivation !== undefined) users[idx].motivation = motivation;
-      if (topic !== undefined) users[idx].topic = topic;
-      if (expertise !== undefined) users[idx].expertise = expertise;
-      if (sampleChapter !== undefined) users[idx].sampleChapter = sampleChapter;
-      if (samplePerspective !== undefined) users[idx].samplePerspective = samplePerspective;
-      users[idx].updatedAt = new Date().toISOString();
+      const result = await withLock(usersFile, async () => {
+        const users = existsSync(usersFile) ? JSON.parse(await rf(usersFile, 'utf-8')) : [];
+        const idx = users.findIndex(u => u.googleId === req.user?.googleId);
+        if (idx < 0) return { error: 404, message: '사용자를 찾을 수 없습니다.' };
 
-      await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
-      res.json({ success: true });
+        const { name, affiliation, subjects, region, intro, motivation, topic, expertise, sampleChapter, samplePerspective } = req.body;
+        if (name !== undefined) users[idx].name = name;
+        if (affiliation !== undefined) users[idx].affiliation = affiliation;
+        if (subjects !== undefined) users[idx].subjects = subjects;
+        if (region !== undefined) users[idx].region = region;
+        if (intro !== undefined) users[idx].intro = intro;
+        if (motivation !== undefined) users[idx].motivation = motivation;
+        if (topic !== undefined) users[idx].topic = topic;
+        if (expertise !== undefined) users[idx].expertise = expertise;
+        if (sampleChapter !== undefined) users[idx].sampleChapter = sampleChapter;
+        if (samplePerspective !== undefined) users[idx].samplePerspective = samplePerspective;
+        users[idx].updatedAt = new Date().toISOString();
+
+        await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
+        return { success: true };
+      });
+
+      if (result.error) return res.status(result.error).json({ message: result.message });
+      res.json(result);
     } catch (err) {
       res.status(500).json({ message: err.message });
     }

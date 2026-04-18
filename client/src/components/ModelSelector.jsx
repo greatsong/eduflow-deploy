@@ -47,13 +47,19 @@ export default function ModelSelector({ value, onChange, defaultPurpose = 'conve
     });
   }, []);
 
+  // 본인 키가 있으면 해당 프로바이더의 프리미엄 모델 잠금 해제 (클라이언트 측)
+  const isUnlockedByOwnKey = (model) => {
+    if (!model?.locked) return false;
+    return !!getApiKey(model.provider);
+  };
+
   const handleChange = (e) => {
     const modelId = e.target.value;
     const model = models.find((m) => m.id === modelId);
 
-    // 프리미엄 모델 잠금 체크
-    if (model?.locked && !isAdmin) {
-      alert(`이 모델은 Pro 이상 등급에서만 사용할 수 있습니다.\n현재 등급: ${TIER_CONFIG[userTier]?.label || userTier}`);
+    // 프리미엄 모델 잠금 체크 (본인 키 있으면 허용)
+    if (model?.locked && !isAdmin && !isUnlockedByOwnKey(model)) {
+      alert(`이 모델은 Pro 이상 등급에서만 사용할 수 있습니다.\n직접 API 키를 입력하면 등급과 무관하게 사용 가능합니다.\n현재 등급: ${TIER_CONFIG[userTier]?.label || userTier}`);
       return;
     }
 
@@ -74,7 +80,7 @@ export default function ModelSelector({ value, onChange, defaultPurpose = 'conve
 
   // 현재 선택된 모델이 잠긴 프리미엄 모델인지 확인 (등급 다운그레이드 시)
   const selectedModel = models.find((m) => m.id === value);
-  const isSelectedLocked = selectedModel?.locked && !isAdmin;
+  const isSelectedLocked = selectedModel?.locked && !isAdmin && !isUnlockedByOwnKey(selectedModel);
 
   return (
     <div className="inline-flex flex-col">
@@ -85,7 +91,7 @@ export default function ModelSelector({ value, onChange, defaultPurpose = 'conve
       >
         {filteredModels.map((m) => {
           const isAvailable = providers[m.provider];
-          const isPremiumLocked = m.locked && !isAdmin;
+          const isPremiumLocked = m.locked && !isAdmin && !isUnlockedByOwnKey(m);
           return (
             <option key={m.id} value={m.id} disabled={isPremiumLocked}>
               {isPremiumLocked ? '👑 ' : !isAvailable ? '🔒 ' : ''}

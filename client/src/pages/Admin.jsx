@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../api/client';
-import { TIER_CONFIG, TIER_ORDER } from '../../../shared/constants.js';
+import { TIER_CONFIG, TIER_ORDER, PREMIUM_MODEL_TIERS } from '../../../shared/constants.js';
 
 const TIER_COLORS = {
   starter: 'bg-gray-100 text-gray-600 border-gray-300',
@@ -1065,6 +1065,74 @@ function SettingsTab() {
         )}
       </div>
 
+      {/* 등급별 모델 접근 제어 */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-lg">👑</span>
+          <h3 className="text-sm font-semibold text-gray-700">등급별 모델 접근 제어</h3>
+        </div>
+        <p className="text-xs text-gray-400 mb-4">
+          사용자 등급에 따라 프론티어(프리미엄) 모델 사용이 자동으로 제한됩니다.
+          <br />등급 변경은 <strong>사용자 관리</strong> 탭에서 할 수 있습니다.
+        </p>
+
+        {/* 등급 테이블 */}
+        <div className="overflow-hidden rounded-xl border border-gray-100 mb-4">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-500">
+              <tr>
+                <th className="px-4 py-2.5 text-left font-medium">등급</th>
+                <th className="px-4 py-2.5 text-center font-medium">프로젝트 한도</th>
+                <th className="px-4 py-2.5 text-center font-medium">프론티어 모델</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {TIER_ORDER.map(t => {
+                const cfg = TIER_CONFIG[t];
+                return (
+                  <tr key={t} className={cfg.allowPremiumModels ? 'bg-purple-50/30' : ''}>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-flex items-center gap-1.5 font-semibold ${
+                        t === 'master' ? 'text-amber-600' : t === 'pro' ? 'text-purple-600' : t === 'standard' ? 'text-emerald-600' : 'text-gray-500'
+                      }`}>
+                        {t === 'master' && '👑'}{t === 'pro' && '⭐'}{t === 'standard' && '🟢'}{t === 'starter' && '⚪'}
+                        {' '}{cfg.label} ({cfg.labelKo})
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center text-gray-600">{cfg.maxProjects === 99 ? '무제한' : `${cfg.maxProjects}개`}</td>
+                    <td className="px-4 py-2.5 text-center">
+                      {cfg.allowPremiumModels ? (
+                        <span className="text-purple-600 font-medium">사용 가능</span>
+                      ) : (
+                        <span className="text-gray-400">제한됨</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 프론티어 모델 목록 */}
+        <div className="p-3 bg-purple-50/60 rounded-xl">
+          <p className="text-xs font-semibold text-purple-700 mb-2">Pro 이상 전용 프론티어 모델</p>
+          <div className="flex flex-wrap gap-1.5">
+            {allModels.filter(m => PREMIUM_MODEL_TIERS.includes(m.tier)).map(m => (
+              <span key={m.id} className="px-2.5 py-1 bg-white border border-purple-200 rounded-lg text-xs text-purple-700 font-medium">
+                {m.label || m.id}
+              </span>
+            ))}
+            {allModels.filter(m => PREMIUM_MODEL_TIERS.includes(m.tier)).length === 0 && (
+              <span className="text-xs text-purple-400">모델 정보 로딩 중...</span>
+            )}
+          </div>
+          <p className="text-[10px] text-purple-500 mt-2">
+            Starter/Standard 사용자에게는 이 모델들이 잠금(🔒) 상태로 표시됩니다.
+          </p>
+        </div>
+      </div>
+
       {/* 허용 모델 설정 */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         <div className="flex items-center gap-2 mb-1">
@@ -1074,6 +1142,7 @@ function SettingsTab() {
         <p className="text-xs text-gray-400 mb-4">
           선택한 모델만 일반 사용자에게 표시됩니다. 아무것도 선택하지 않으면 모든 모델이 허용됩니다.
           <br />관리자는 항상 모든 모델을 사용할 수 있습니다.
+          <br />위의 등급별 프론티어 모델 제한은 이 설정과 별도로 적용됩니다.
         </p>
 
         {allModels.length > 0 ? (

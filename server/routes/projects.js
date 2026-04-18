@@ -162,6 +162,23 @@ router.post('/', asyncHandler(async (req, res) => {
     // ── v2: 3축 조합 시스템 ──
     const tc = new TemplateComposer();
     await tc.applyV2(projPath, what_id, how_id, featureIds || [], context_answers || {});
+
+    // v2에서도 커스텀 프롬프트 저장
+    if (custom_prompt_config) {
+      const infoFile = join(projPath, 'template-info.json');
+      if (existsSync(infoFile)) {
+        const raw = await readFile(infoFile, 'utf-8');
+        const info = JSON.parse(raw);
+        if (custom_prompt_config.toc_prompt_addition !== undefined) {
+          info.toc_prompt_addition = custom_prompt_config.toc_prompt_addition;
+        }
+        if (custom_prompt_config.chapter_prompt_addition !== undefined) {
+          info.chapter_prompt_addition = custom_prompt_config.chapter_prompt_addition;
+        }
+        info.custom_prompt_config = custom_prompt_config;
+        await writeFile(infoFile, JSON.stringify(info, null, 2), 'utf-8');
+      }
+    }
   } else if (template_id) {
     // ── v1: 레거시 단일 템플릿 ──
     const tm = new TemplateManager();
@@ -232,6 +249,9 @@ router.post('/templates/compose-preview', asyncHandler(async (req, res) => {
     persona: composed.persona,
     templateName: composed.templateName,
     compatibility: composed.compatibility,
+    tocAddition: composed.tocAddition,
+    chapterAddition: composed.chapterAddition,
+    // 하위 호환
     tocAdditionPreview: composed.tocAddition.slice(0, 500),
     chapterAdditionPreview: composed.chapterAddition.slice(0, 500),
   });

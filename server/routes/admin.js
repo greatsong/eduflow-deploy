@@ -8,6 +8,7 @@ import { ServerSettings } from '../services/settings.js';
 import { TokenUsageManager } from '../services/tokenUsageManager.js';
 import { sanitizeId } from '../middleware/sanitize.js';
 import { TIER_CONFIG } from '../../shared/constants.js';
+import { withLock } from '../services/fileLock.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = process.env.PROJECTS_DIR || join(__dirname, '..', '..', 'projects');
@@ -49,12 +50,22 @@ async function loadUsersRegistry() {
   }
 }
 
-/** 사용자 레지스트리 저장 */
+/** 사용자 레지스트리 저장 (뮤텍스 적용) */
 async function saveUsersRegistry(users) {
   if (!existsSync(DATA_DIR)) {
     await mkdir(DATA_DIR, { recursive: true });
   }
   await writeFile(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+}
+
+/** 읽기→수정→쓰기를 뮤텍스로 감싸는 헬퍼 */
+async function updateUsersRegistry(mutator) {
+  return withLock(USERS_FILE, async () => {
+    const users = await loadUsersRegistry();
+    const result = await mutator(users);
+    await saveUsersRegistry(users);
+    return result;
+  });
 }
 
 /** 기존 사용자 여부 확인 (users.json 조회만, 생성 안함) */
@@ -69,54 +80,52 @@ export async function checkExistingUser(userInfo) {
  * @param profileData - (선택) 신규 사용자 프로필 데이터 (intro, motivation 등)
  */
 export async function upsertUser(userInfo, profileData = null) {
-  const users = await loadUsersRegistry();
-  const idx = users.findIndex(u => u.googleId === userInfo.googleId);
+  return withLock(USERS_FILE, async () => {
+    const users = await loadUsersRegistry();
+    const idx = users.findIndex(u => u.googleId === userInfo.googleId);
 
-  if (idx >= 0) {
-    // 기존 사용자 업데이트
-    users[idx] = {
-      ...users[idx],
-      name: userInfo.name,
-      email: userInfo.email,
-      picture: userInfo.picture,
-      lastLoginAt: new Date().toISOString(),
-    };
-    // 프로필 데이터가 제공되면 함께 업데이트 (보완하기 기능)
-    if (profileData) {
-      Object.assign(users[idx], profileData);
-      users[idx].updatedAt = new Date().toISOString();
+    if (idx >= 0) {
+      users[idx] = {
+        ...users[idx],
+        name: userInfo.name,
+        email: userInfo.email,
+        picture: userInfo.picture,
+        lastLoginAt: new Date().toISOString(),
+      };
+      if (profileData) {
+        Object.assign(users[idx], profileData);
+        users[idx].updatedAt = new Date().toISOString();
+      }
+    } else {
+      const currentSettings = await settings.get();
+      const isApprovalMode = currentSettings.registrationMode === 'approval';
+      const isAdmin = ADMIN_EMAILS.includes(userInfo.email);
+
+      const newUser = {
+        googleId: userInfo.googleId,
+        email: userInfo.email,
+        name: userInfo.name,
+        picture: userInfo.picture,
+        affiliation: '',
+        status: (isApprovalMode && !isAdmin) ? 'pending' : 'active',
+        tier: isAdmin ? 'master' : 'starter',
+        maxProjects: isAdmin ? 99 : 1,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+      };
+
+      if (profileData) {
+        Object.assign(newUser, profileData);
+        if (profileData.name) newUser.name = profileData.name;
+        if (profileData.affiliation) newUser.affiliation = profileData.affiliation;
+      }
+
+      users.push(newUser);
     }
-  } else {
-    // 신규 사용자 — registrationMode에 따라 상태 결정
-    const currentSettings = await settings.get();
-    const isApprovalMode = currentSettings.registrationMode === 'approval';
-    const isAdmin = ADMIN_EMAILS.includes(userInfo.email);
 
-    const newUser = {
-      googleId: userInfo.googleId,
-      email: userInfo.email,
-      name: userInfo.name,
-      picture: userInfo.picture,
-      affiliation: '',
-      status: (isApprovalMode && !isAdmin) ? 'pending' : 'active',
-      tier: isAdmin ? 'master' : 'starter',
-      maxProjects: isAdmin ? 99 : 1,
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-    };
-
-    // 프로필 데이터가 제공되면 신규 사용자에게 한 번에 저장 (원자적 등록)
-    if (profileData) {
-      Object.assign(newUser, profileData);
-      if (profileData.name) newUser.name = profileData.name;
-      if (profileData.affiliation) newUser.affiliation = profileData.affiliation;
-    }
-
-    users.push(newUser);
-  }
-
-  await saveUsersRegistry(users);
-  return users[idx >= 0 ? idx : users.length - 1];
+    await saveUsersRegistry(users);
+    return users[idx >= 0 ? idx : users.length - 1];
+  });
 }
 
 /** 관리자 이메일 목록 export (Layout에서 사용) */
@@ -214,32 +223,32 @@ router.get('/users/:id/projects', asyncHandler(async (req, res) => {
 // PUT /api/admin/users/:id/status - 사용자 활성/비활성화 (승인 시 maxProjects, tier도 함께 설정 가능)
 router.put('/users/:id/status', asyncHandler(async (req, res) => {
   const googleId = req.params.id;
-  const { status, maxProjects, tier } = req.body; // 'active' | 'inactive', maxProjects (optional), tier (optional)
+  const { status, maxProjects, tier } = req.body;
 
   if (!['active', 'inactive', 'pending'].includes(status)) {
     return res.status(400).json({ message: '상태는 active, inactive, pending 중 하나여야 합니다.' });
   }
 
-  const users = await loadUsersRegistry();
-  const idx = users.findIndex(u => u.googleId === googleId);
-  if (idx < 0) {
-    return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-  }
+  const result = await withLock(USERS_FILE, async () => {
+    const users = await loadUsersRegistry();
+    const idx = users.findIndex(u => u.googleId === googleId);
+    if (idx < 0) return { error: 404, message: '사용자를 찾을 수 없습니다.' };
 
-  users[idx].status = status;
-  // 승인 시 maxProjects도 함께 설정 가능
-  if (maxProjects !== undefined && Number.isInteger(maxProjects) && maxProjects >= 1 && maxProjects <= 99) {
-    users[idx].maxProjects = maxProjects;
-  }
-  // tier가 제공되면 등급 + maxProjects 함께 업데이트
-  if (tier && TIER_CONFIG[tier]) {
-    users[idx].tier = tier;
-    users[idx].maxProjects = TIER_CONFIG[tier].maxProjects;
-  }
-  users[idx].updatedAt = new Date().toISOString();
-  await saveUsersRegistry(users);
+    users[idx].status = status;
+    if (maxProjects !== undefined && Number.isInteger(maxProjects) && maxProjects >= 1 && maxProjects <= 99) {
+      users[idx].maxProjects = maxProjects;
+    }
+    if (tier && TIER_CONFIG[tier]) {
+      users[idx].tier = tier;
+      users[idx].maxProjects = TIER_CONFIG[tier].maxProjects;
+    }
+    users[idx].updatedAt = new Date().toISOString();
+    await saveUsersRegistry(users);
+    return users[idx];
+  });
 
-  res.json(users[idx]);
+  if (result.error) return res.status(result.error).json({ message: result.message });
+  res.json(result);
 }));
 
 // PUT /api/admin/users/:id/tier - 사용자 등급 변경
@@ -248,15 +257,21 @@ router.put('/users/:id/tier', asyncHandler(async (req, res) => {
   if (!tier || !TIER_CONFIG[tier]) {
     return res.status(400).json({ message: '유효하지 않은 등급입니다.' });
   }
-  const users = existsSync(USERS_FILE) ? JSON.parse(await readFile(USERS_FILE, 'utf-8')) : [];
-  const idx = users.findIndex(u => u.googleId === req.params.id);
-  if (idx < 0) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
 
-  users[idx].tier = tier;
-  users[idx].maxProjects = TIER_CONFIG[tier].maxProjects;
-  users[idx].updatedAt = new Date().toISOString();
-  await writeFile(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
-  res.json({ success: true, tier, maxProjects: TIER_CONFIG[tier].maxProjects });
+  const result = await withLock(USERS_FILE, async () => {
+    const users = existsSync(USERS_FILE) ? JSON.parse(await readFile(USERS_FILE, 'utf-8')) : [];
+    const idx = users.findIndex(u => u.googleId === req.params.id);
+    if (idx < 0) return { error: 404, message: '사용자를 찾을 수 없습니다.' };
+
+    users[idx].tier = tier;
+    users[idx].maxProjects = TIER_CONFIG[tier].maxProjects;
+    users[idx].updatedAt = new Date().toISOString();
+    await writeFile(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+    return { success: true, tier, maxProjects: TIER_CONFIG[tier].maxProjects };
+  });
+
+  if (result.error) return res.status(result.error).json({ message: result.message });
+  res.json(result);
 }));
 
 // PUT /api/admin/users/:id/max-projects - 사용자별 프로젝트 한도 설정
@@ -268,17 +283,19 @@ router.put('/users/:id/max-projects', asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'maxProjects는 1~99 사이의 정수여야 합니다.' });
   }
 
-  const users = await loadUsersRegistry();
-  const idx = users.findIndex(u => u.googleId === googleId);
-  if (idx < 0) {
-    return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
-  }
+  const result = await withLock(USERS_FILE, async () => {
+    const users = await loadUsersRegistry();
+    const idx = users.findIndex(u => u.googleId === googleId);
+    if (idx < 0) return { error: 404, message: '사용자를 찾을 수 없습니다.' };
 
-  users[idx].maxProjects = maxProjects;
-  users[idx].updatedAt = new Date().toISOString();
-  await saveUsersRegistry(users);
+    users[idx].maxProjects = maxProjects;
+    users[idx].updatedAt = new Date().toISOString();
+    await saveUsersRegistry(users);
+    return users[idx];
+  });
 
-  res.json(users[idx]);
+  if (result.error) return res.status(result.error).json({ message: result.message });
+  res.json(result);
 }));
 
 // GET /api/admin/projects - 전체 프로젝트 목록

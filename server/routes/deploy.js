@@ -5,6 +5,7 @@ import { stat, readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { Deployment } from '../services/deployment.js';
+import { COLOR_THEMES, DEFAULT_THEME_KEY } from '../services/starlightGenerator.js';
 import { sanitizeId, sanitizeFilename } from '../middleware/sanitize.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,19 @@ function projectPath(id) {
   if (!safe) throw new Error('잘못된 프로젝트 ID입니다.');
   return join(PROJECTS_DIR, safe);
 }
+
+// GET /api/projects/:id/deploy/themes - 사이트 색상 테마 프리셋 목록
+router.get('/themes', asyncHandler(async (req, res) => {
+  res.json({
+    default: DEFAULT_THEME_KEY,
+    themes: Object.entries(COLOR_THEMES).map(([key, value]) => ({
+      key,
+      label: value.label,
+      accent: value.accent,
+      accentBg: value.accentBg,
+    })),
+  });
+}));
 
 // GET /api/projects/:id/deploy/status - 배포 도구 상태 확인
 router.get('/status', asyncHandler(async (req, res) => {
@@ -80,12 +94,51 @@ router.post('/mkdocs/config', asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
-// POST /api/projects/:id/deploy/mkdocs/build - MkDocs 빌드
+// POST /api/projects/:id/deploy/mkdocs/build - 사이트 빌드 (기본: Starlight, 레거시: MkDocs)
+//
+// body 파라미터:
+//   - theme: 'starlight' (기본) | 'mkdocs'
+//   - siteName, creator, accentColor (starlight 전용)
+//   - siteUrl, basePath (starlight 전용, GitHub Pages 경로용)
+//
+// 레거시 경로 '/mkdocs/build' 이름은 유지 — 내부에서 테마 분기만 처리.
 router.post('/mkdocs/build', asyncHandler(async (req, res) => {
+  const {
+    theme,
+    siteName,
+    creator,
+    colorTheme,
+    accentColor,
+    siteUrl,
+    basePath,
+  } = req.body || {};
+
   const dep = new Deployment(projectPath(req.params.id));
   await dep.init();
 
-  const result = await dep.buildWebsite();
+  // theme/colorTheme 기본값: 프로젝트 config.json의 deployment.* → 기본값
+  let effectiveTheme = theme;
+  let effectiveColorTheme = colorTheme;
+  try {
+    const cfgPath = join(projectPath(req.params.id), 'config.json');
+    if (existsSync(cfgPath)) {
+      const cfg = JSON.parse(await readFile(cfgPath, 'utf-8'));
+      effectiveTheme = effectiveTheme || cfg.deployment?.theme || 'starlight';
+      effectiveColorTheme = effectiveColorTheme || cfg.deployment?.color_theme || 'sky';
+    }
+  } catch { /* 무시 */ }
+  effectiveTheme = effectiveTheme || 'starlight';
+  effectiveColorTheme = effectiveColorTheme || 'sky';
+
+  const result = await dep.buildWebsite({
+    theme: effectiveTheme,
+    siteName,
+    creator,
+    colorTheme: effectiveColorTheme,
+    accentColor,
+    siteUrl,
+    basePath,
+  });
   res.json(result);
 }));
 

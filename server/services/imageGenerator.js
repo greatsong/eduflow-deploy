@@ -24,7 +24,6 @@ const PLACEHOLDER_REGEX = /<!-- IMAGE: (.+?) -->/g;
 // Google Gemini 이미지 모델 (폴백 순서)
 const GEMINI_IMAGE_MODELS = [
   'gemini-3.1-flash-image-preview',
-  'gemini-2.5-flash-preview-image-generation',
   'gemini-2.0-flash-preview-image-generation',
 ];
 
@@ -209,29 +208,57 @@ export class ImageGenerator {
   }
 
   /**
-   * 교육용 이미지 프롬프트를 정교하게 구성
+   * 교육용 이미지 프롬프트를 정교하게 구성.
+   *
+   * 기본 품질 정책 (2026-04-18 강화):
+   * - 기존 warm/pastel 감성은 유지하되 "선명도·디테일·텍스트 왜곡 방지"를 명시적으로 지시
+   * - Composition / Art style / Technical quality / Color & lighting / Do not produce로
+   *   계층화해서 모델이 각 항목을 빼먹지 않도록 함
+   * - 글자(한글·영문)가 이미지 안에 직접 렌더되는 것을 명시적으로 금지 → 왜곡된 글자 아티팩트 최소화
    */
   _buildPrompt(description) {
     const base = [
-      `Create an educational illustration for a textbook.`,
+      `Create a sharp, high-detail educational illustration for a high school or university textbook page.`,
       ``,
       `Subject: ${description}`,
       ``,
-      `Style:`,
-      `- Warm-toned animation style illustration`,
-      `- Friendly, approachable characters and objects`,
-      `- Soft pastel color palette with warm highlights`,
-      `- Clean lines with gentle shading and soft gradients`,
+      `Composition:`,
+      `- Single focal subject clearly centered, with supporting context around it`,
+      `- Landscape orientation (wider than tall), suitable for wide book-page layouts`,
+      `- Strong visual hierarchy: the primary subject is the largest and sharpest element`,
+      `- Leave generous breathing room around the subject; do not fill every corner`,
       ``,
-      `Requirements:`,
-      `- Clear visual hierarchy: main subject prominent`,
-      `- Label key components in Korean if the description is in Korean`,
-      `- Light, warm background`,
-      `- Every element serves an educational purpose — no clutter`,
+      `Art style:`,
+      `- Warm-toned animation-style illustration with crisp, clean linework`,
+      `- Friendly, approachable characters, objects, and environments`,
+      `- Soft pastel color palette with warm highlights, combined with strong contrast between the subject and the background`,
+      `- Smooth gradients only in large flat areas; avoid muddy, blurry, or noisy shading`,
+      `- Anti-aliased vector-like edges, sharp silhouettes, consistent line weight`,
+      ``,
+      `Technical quality:`,
+      `- Render at high resolution so fine detail remains crisp at 1024x1024 or larger`,
+      `- No motion blur, no JPEG-like compression artifacts, no chromatic aberration, no film grain`,
+      `- No watermarks, signatures, UI mockups, or decorative signatures`,
+      `- Korean or English KEYWORD labels are welcome when they reinforce the concept. Render them LARGE and CRISP using a single clean sans-serif typeface (Pretendard-like). Limit keyword labels to at most 3 short phrases per image (e.g. "표준어", "방언", "세계 영어"). Each keyword must be spelled correctly and readable without distortion.`,
+      `- Do NOT fill the illustration with long sentences, paragraphs, or captions — only short focal keywords`,
+      `- If showing a process or sequence: use arrows and simple numbered markers arranged left-to-right or top-to-bottom`,
+      ``,
+      `Color & lighting:`,
+      `- Coherent palette of 4 to 6 harmonized colors`,
+      `- Soft, directional lighting with a warm key light`,
+      `- Light, warm, uncluttered background that frames the subject without competing with it`,
+      ``,
+      `Do not produce:`,
+      `- Photorealistic close-up human faces`,
+      `- Handwritten-style text, decorative typography, or stylized fonts`,
+      `- Long sentences, paragraphs, or caption-style explanations inside the image`,
+      `- More than 3 keyword labels; keep text sparse so the illustration breathes`,
+      `- Decorative frames, borders, or page-layout elements (the image will be placed inside a textbook layout)`,
+      `- Culturally biased stereotypes or dated imagery`,
+      ``,
+      `Purpose:`,
+      `- Every visible element must serve the educational subject; remove incidental clutter`,
       `- Suitable for high school to university students`,
-      `- No watermarks, signatures, or attribution text`,
-      `- If showing a process: use arrows, numbered steps, clear flow`,
-      `- Landscape orientation (wider than tall)`,
     ];
 
     if (this.styleGuide) {
@@ -268,9 +295,10 @@ export class ImageGenerator {
         });
 
         if (response.candidates?.[0]?.content?.parts) {
-          for (const part of response.candidates[0].content.parts) {
+          const parts = response.candidates[0].content.parts;
+          for (const part of parts) {
             if (part.inlineData) {
-              console.log(`[ImageGen] Google 이미지 생성 성공 (모델: ${modelName})`);
+              console.log(`[ImageGen] Google 이미지 생성 성공 (모델: ${modelName}, mime: ${part.inlineData.mimeType}, bytes: ${part.inlineData.data?.length || 0})`);
               this._recordUsage(modelName, 'google', true);
               return {
                 success: true,
@@ -281,6 +309,12 @@ export class ImageGenerator {
               };
             }
           }
+          // 이미지가 없고 텍스트만 있는 경우 로깅
+          const textParts = parts.filter(p => p.text).map(p => p.text.substring(0, 100));
+          console.warn(`[ImageGen] Google 응답에 이미지 없음 (${modelName}), 텍스트만 ${parts.length}개 파트: ${textParts.join(' | ')}`);
+        } else {
+          const finishReason = response.candidates?.[0]?.finishReason || 'unknown';
+          console.warn(`[ImageGen] Google 응답 구조 비정상 (${modelName}), finishReason: ${finishReason}`);
         }
       } catch (error) {
         console.error(`[ImageGen] Google 이미지 생성 실패 (${modelName}):`, error.message);

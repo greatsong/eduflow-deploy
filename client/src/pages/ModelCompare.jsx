@@ -134,7 +134,12 @@ export default function ModelCompare() {
       google: serverProviders.google || !!getApiKey('google'),
       upstage: serverProviders.upstage || !!getApiKey('upstage'),
     };
-    return allModels.filter((m) => keys[m.provider]);
+    return allModels.filter((m) => {
+      if (!keys[m.provider]) return false;
+      // locked 모델은 본인 키가 있을 때만 표시
+      if (m.locked && !getApiKey(m.provider)) return false;
+      return true;
+    });
   }, [allModels, serverProviders]);
 
   const blind = mode === 'blind';
@@ -515,7 +520,7 @@ export default function ModelCompare() {
                 <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100">
                   <span className="text-sm font-medium text-gray-600">심사위원 모델</span>
                   <select value={autoJudgeModel} onChange={(e) => setAutoJudgeModel(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white">
-                    {allModels.map((m) => <option key={m.id} value={m.id}>{m.display_name} ({m.tier})</option>)}
+                    {availableModels.map((m) => <option key={m.id} value={m.id}>{m.display_name} ({m.tier})</option>)}
                   </select>
                   <span className="text-xs text-gray-400">이 모델이 다른 모델들의 응답을 평가합니다</span>
                 </div>

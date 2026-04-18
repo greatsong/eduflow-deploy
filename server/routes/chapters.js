@@ -11,6 +11,7 @@ import { streamChat, detectProvider, resolveApiKey } from '../services/aiProvide
 import { TokenUsageManager } from '../services/tokenUsageManager.js';
 import { ImageGenerator } from '../services/imageGenerator.js';
 import { sanitizeId } from '../middleware/sanitize.js';
+import { registerSSE } from '../services/sseManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = process.env.PROJECTS_DIR || join(__dirname, '..', '..', 'projects');
@@ -193,6 +194,8 @@ router.post('/generate-all', requireApiKey, requireModelAccess, asyncHandler(asy
   const { model, maxTokens, concurrent, skipCompleted, tpmLimit, chapterIds } = req.body;
   const projPath = projectPath(req.params.id);
 
+  const sse = registerSSE(req, res);
+  if (!sse.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
   sseHeaders(res);
 
   try {
@@ -213,7 +216,7 @@ router.post('/generate-all', requireApiKey, requireModelAccess, asyncHandler(asy
 
     const report = await gen.generateAllChapters(
       tocData,
-      model || 'claude-opus-4-6',
+      model || 'claude-opus-4-7',
       maxTokens || 12000,
       concurrent || 1,
       progressCallback,
@@ -224,7 +227,7 @@ router.post('/generate-all', requireApiKey, requireModelAccess, asyncHandler(asy
 
     // 성공한 챕터 진행 상태 업데이트 + 토큰 사용량 기록
     const pm = new ProgressManager(projPath);
-    const useModel = model || 'claude-opus-4-6';
+    const useModel = model || 'claude-opus-4-7';
     const provider = detectProvider(useModel);
     for (const ch of report.chapters || []) {
       if (ch.success) {
@@ -261,7 +264,7 @@ router.post('/:chapterId/generate', requireApiKey, requireModelAccess, asyncHand
   // TOC에서 챕터 정보 조회
   const info = await gen.findChapterInToc(chapterId);
 
-  const useModel = model || 'claude-opus-4-6';
+  const useModel = model || 'claude-opus-4-7';
   const result = await gen.generateChapter(
     chapterId,
     info.chapter_title || chapterId,
@@ -299,6 +302,8 @@ router.post('/:chapterId/chat', requireApiKey, requireModelAccess, asyncHandler(
   const projPath = projectPath(req.params.id);
   const chapterId = req.params.chapterId;
 
+  const sse = registerSSE(req, res);
+  if (!sse.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
   sseHeaders(res);
 
   try {
@@ -372,6 +377,8 @@ ${currentContent.slice(0, 8000) || '(아직 작성되지 않음)'}
 router.post('/:chapterId/image-chat', requireApiKey, requireModelAccess, asyncHandler(async (req, res) => {
   const { message, imagePrompt, model, messages: clientMessages } = req.body;
 
+  const sse = registerSSE(req, res);
+  if (!sse.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
   sseHeaders(res);
 
   try {
@@ -478,6 +485,8 @@ router.post('/:chapterId/generate-images', requireApiKey, asyncHandler(async (re
   }
 
   // SSE 스트리밍으로 진행 상황 전송
+  const sse = registerSSE(req, res);
+  if (!sse.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
   sseHeaders(res);
 
   try {

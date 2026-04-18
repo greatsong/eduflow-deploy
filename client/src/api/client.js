@@ -53,9 +53,12 @@ function authHeaders(extra = {}) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // 기존 호환: x-api-key (사용자가 직접 키를 입력한 경우)
+  // Anthropic 키: x-anthropic-key + 레거시 호환 x-api-key 동시 전송
   const anthropicKey = getApiKey('anthropic');
-  if (anthropicKey) headers['x-api-key'] = anthropicKey;
+  if (anthropicKey) {
+    headers['x-anthropic-key'] = anthropicKey;
+    headers['x-api-key'] = anthropicKey; // 하위 호환
+  }
 
   // 프로바이더별 헤더
   const openaiKey = getApiKey('openai');
@@ -132,12 +135,19 @@ export function apiSSE(path, { onText, onProgress, onError, onDone } = {}) {
 
 /**
  * POST 요청 후 SSE 스트리밍 (EventSource는 GET만 지원하므로 fetch 사용)
+ * body가 FormData면 multipart로 전송 (Content-Type은 브라우저가 자동 설정)
  */
 export async function apiStreamPost(path, body, { onText, onProgress, onError, onDone, onToc } = {}) {
+  const isFormData = body instanceof FormData;
+  const headers = authHeaders();
+  if (isFormData) {
+    // multipart에서는 Content-Type을 브라우저가 경계 문자와 함께 자동 설정
+    delete headers['Content-Type'];
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
+    headers,
+    body: isFormData ? body : JSON.stringify(body),
   });
 
   if (!res.ok) {

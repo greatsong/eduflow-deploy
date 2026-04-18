@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:22-slim
 
 # 시스템 도구 설치: Python, pip, pandoc, git, gh CLI
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -13,8 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get update && apt-get install -y gh \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# MkDocs + Material 테마 설치
+# MkDocs + Material 테마 설치 (레거시 테마 지원용 — 기본 테마는 Astro Starlight)
 RUN python3 -m pip install --break-system-packages mkdocs mkdocs-material
+
+# Astro Starlight 빌드 가속: npm 캐시 디렉토리 설정
+RUN mkdir -p /app/.npm-cache && npm config set cache /app/.npm-cache
 
 WORKDIR /app
 

@@ -5,6 +5,7 @@ import { requireApiKey, requireModelAccess } from '../middleware/apiKey.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { streamChat, chat, detectProvider, resolveApiKey } from '../services/aiProvider.js';
 import { TokenUsageManager } from '../services/tokenUsageManager.js';
+import { registerSSE } from '../services/sseManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || join(__dirname, '..', '..', 'data');
@@ -29,6 +30,9 @@ router.post('/', requireApiKey, requireModelAccess, asyncHandler(async (req, res
   if (!prompt?.trim()) {
     return res.status(400).json({ message: '프롬프트를 입력해주세요.' });
   }
+
+  const sse = registerSSE(req, res);
+  if (!sse.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
 
   // SSE 설정
   res.writeHead(200, {
@@ -114,6 +118,9 @@ router.post('/auto-evaluate', requireApiKey, requireModelAccess, asyncHandler(as
   if (!prompt?.trim()) {
     return res.status(400).json({ message: '프롬프트를 입력해주세요.' });
   }
+
+  const sse2 = registerSSE(req, res);
+  if (!sse2.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
