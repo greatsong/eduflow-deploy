@@ -187,7 +187,6 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [tocPrompt, setTocPrompt] = useState(draft?.tocPrompt || '');
   const [chapterPrompt, setChapterPrompt] = useState(draft?.chapterPrompt || '');
   const [includeHwDiagrams, setIncludeHwDiagrams] = useState(draft?.includeHwDiagrams || false);
-  const [imageGenerationEnabled, setImageGenerationEnabled] = useState(draft?.imageGenerationEnabled || false);
   const [assessmentLevel, setAssessmentLevel] = useState(draft?.assessmentLevel ?? 2);
   const [showSampleModal, setShowSampleModal] = useState(false);
   const [sampleContent, setSampleContent] = useState('');
@@ -216,12 +215,12 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     if (!project) {
       saveDraft({
         form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor,
-        includeHwDiagrams, imageGenerationEnabled, assessmentLevel,
+        includeHwDiagrams, assessmentLevel,
         templateMode, selectedWhat, selectedHow, selectedFeatures, contextAnswers,
       });
     }
   }, [form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor,
-      includeHwDiagrams, imageGenerationEnabled, assessmentLevel,
+      includeHwDiagrams, assessmentLevel,
       templateMode, selectedWhat, selectedHow, selectedFeatures, contextAnswers, project]);
 
   // 클래식 템플릿 목록 로드
@@ -349,7 +348,6 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       tocPromptDirty.current = loadedTocPrompt.length > 0;
       chapterPromptDirty.current = loadedChapterPrompt.length > 0;
       setIncludeHwDiagrams(config.include_hw_diagrams || false);
-      setImageGenerationEnabled(config.image_generation_enabled || false);
       setAssessmentLevel(config.assessment_level ?? 2);
       if (templateInfo.template_id) setShowPromptEditor(true);
       // v2 정보 로드 (template-info.json에 저장됨)
@@ -397,7 +395,6 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       const body = {
         ...form,
         include_hw_diagrams: selectedFeatures.includes('hw_diagrams'),
-        image_generation_enabled: selectedFeatures.includes('image_generation'),
         assessment_level: assessmentLevel,
       };
 
@@ -444,7 +441,6 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
           description: form.description,
           target_audience: form.target_audience,
           include_hw_diagrams: selectedFeatures.includes('hw_diagrams'),
-          image_generation_enabled: selectedFeatures.includes('image_generation'),
           assessment_level: assessmentLevel,
         }),
       });
