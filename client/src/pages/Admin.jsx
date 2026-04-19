@@ -1028,43 +1028,6 @@ function SettingsTab() {
         </div>
       </div>
 
-      {/* 이미지 자동 생성 설정 */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-lg">🖼️</span>
-          <h3 className="text-sm font-semibold text-gray-700">이미지 자동 생성 (Gemini Imagen)</h3>
-        </div>
-        <p className="text-xs text-gray-400 mb-4">
-          활성화하면 챕터 생성 시 이미지 플레이스홀더를 감지하여 Gemini Imagen API로 이미지를 자동 생성합니다.
-          <br />Google API 키가 설정되어 있어야 합니다. 프로젝트별로 개별 설정할 수도 있습니다.
-        </p>
-        <label className="flex items-center gap-3 cursor-pointer">
-          <div className="relative">
-            <input
-              type="checkbox"
-              checked={settings.imageGenerationEnabled || false}
-              onChange={(e) => setSettings(prev => ({ ...prev, imageGenerationEnabled: e.target.checked }))}
-              className="sr-only peer"
-            />
-            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
-            <div className="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
-          </div>
-          <div>
-            <span className="text-sm font-medium text-gray-700">이미지 자동 생성 활성화</span>
-            <p className="text-xs text-gray-500">
-              {settings.imageGenerationEnabled
-                ? '새 프로젝트에서 이미지 자동 생성이 기본 활성화됩니다'
-                : '이미지 자동 생성이 비활성화되어 있습니다 (프로젝트별 설정 가능)'}
-            </p>
-          </div>
-        </label>
-        {settings.imageGenerationEnabled && !(adminKeys.google?.hasKey) && !settings.serverApiKeys?.google && (
-          <p className="text-xs text-amber-600 mt-3">
-            ⚠️ Google API 키가 설정되지 않았습니다. 이미지 생성을 위해 위의 API 키 설정에서 Google 키를 추가하세요.
-          </p>
-        )}
-      </div>
-
       {/* 등급별 모델 접근 제어 */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         <div className="flex items-center gap-2 mb-1">
