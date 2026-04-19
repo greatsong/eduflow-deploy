@@ -521,7 +521,16 @@ router.put('/:id/template-info', asyncHandler(async (req, res) => {
   if (chapter_prompt_addition !== undefined) {
     info.chapter_prompt_addition = chapter_prompt_addition;
   }
-  info.custom_prompt_config = { toc_prompt_addition, chapter_prompt_addition };
+  // custom_prompt_config는 POST create에서 다른 필드({role, audience, ...}) 형태로도 쓰이므로
+  // 부분 업데이트 시 req.body의 undefined로 기존 값을 지우지 않도록 병합 처리.
+  if (toc_prompt_addition !== undefined || chapter_prompt_addition !== undefined) {
+    const prev = info.custom_prompt_config || {};
+    info.custom_prompt_config = {
+      ...prev,
+      ...(toc_prompt_addition !== undefined ? { toc_prompt_addition } : {}),
+      ...(chapter_prompt_addition !== undefined ? { chapter_prompt_addition } : {}),
+    };
+  }
 
   // v2 필드 업데이트
   if (what_id !== undefined) info.what_id = what_id;
