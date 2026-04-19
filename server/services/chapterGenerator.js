@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 import pLimit from 'p-limit';
 import { TemplateManager } from './templateManager.js';
 import { streamChat, detectProvider, resolveApiKey } from './aiProvider.js';
-import { ImageGenerator } from './imageGenerator.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1085,27 +1084,6 @@ ${courseInfo}
     const isClassPreview = templateId === 'class-preview';
     const isAiLiteracy = templateId === 'lesson-per-session';
 
-    // 이미지 자동 생성 가이드 (v1: config, v2: features 배열)
-    const imageEnabled = this.projectConfig.image_generation_enabled
-      || (this.templateInfo.features || []).includes('image_generation');
-    let imageGuide = '';
-    if (imageEnabled) {
-      imageGuide = `
-## 이미지 삽입 (자동 생성)
-교재에 시각 자료가 필요한 곳에 아래 형식으로 이미지 플레이스홀더를 삽입하세요:
-<!-- IMAGE: 이미지에 대한 상세한 설명 -->
-
-예시:
-<!-- IMAGE: DNA 이중나선 구조를 보여주는 3D 모델, 염기쌍이 색상으로 구분됨 -->
-<!-- IMAGE: 한국의 삼국시대 영토 변화를 보여주는 지도 (고구려-파랑, 백제-초록, 신라-빨강) -->
-
-주의:
-- 설명은 구체적이고 교육적 맥락이 명확해야 합니다
-- 차시당 3개 이내로 제한하세요 (생성 시간 고려)
-- Mermaid나 SVG로 충분한 다이어그램은 이미지 대신 코드로 작성하세요
-`;
-    }
-
     // 평가 단계 가이드 (assessment_level: 0~4)
     const assessmentLevel = this.projectConfig.assessment_level ?? 2;
     let assessmentGuide = '';
@@ -1184,7 +1162,6 @@ ${courseInfo}
       guidelinesText,
       templateAddition,
       pedagogicalContext,
-      imageGuide,
       assessmentGuide,
       outline: outline || '개요 없음',
       'pc.role': pc.role,
@@ -1362,36 +1339,6 @@ ${courseInfo}
   }
 
   /**
-   * 이미지 플레이스홀더를 처리하는 공통 헬퍼 (v2 ImageGenerator 사용)
-   * API 키가 없어도 플레이스홀더 SVG가 생성되므로 항상 동작
-   */
-  async _processImages(content, chapterId, progressCallback) {
-    const googleApiKey = resolveApiKey('google', this.apiKeys);
-    const openaiApiKey = resolveApiKey('openai', this.apiKeys);
-
-    let imgStyleGuide = '';
-    const imgGuideFile = join(this.projectPath, 'image_guidelines.md');
-    if (existsSync(imgGuideFile)) {
-      imgStyleGuide = (await readFile(imgGuideFile, 'utf-8')).trim();
-    }
-
-    const imgGen = new ImageGenerator({
-      googleApiKey,
-      openaiApiKey,
-      styleGuide: imgStyleGuide,
-      resolution: this.projectConfig.image_resolution || 'standard',
-      projectPath: this.projectPath,
-    });
-
-    const placeholders = imgGen.findPlaceholders(content);
-    if (placeholders.length === 0) return content;
-
-    const providerLabel = imgGen.availableProvider === 'none' ? '플레이스홀더' : imgGen.availableProvider;
-    this._log(`🖼️ ${chapterId} 이미지 플레이스홀더 ${placeholders.length}개 → ${providerLabel} 생성`);
-    return imgGen.processChapterImages(content, this.projectPath, chapterId, progressCallback);
-  }
-
-  /**
    * 챕터 생성 후 검증을 실행하고 결과를 로그/콜백으로 전달
    * @returns {{ valid: boolean, warnings: string[], errors: string[] }}
    */
@@ -1473,42 +1420,7 @@ ${courseInfo}
       }
 
       const result = await this._streamGenerate(model, effectiveMaxTokens, prompt, chapterId, progressCallback);
-
-      // 이미지 플레이스홀더가 있고 이미지 생성이 활성화되어 있으면 이미지 자동 생성
-      let finalContent = result.content;
-      const imgEnabled = this.projectConfig.image_generation_enabled
-        || (this.templateInfo.features || []).includes('image_generation');
-      if (imgEnabled) {
-        try {
-          const googleApiKey = resolveApiKey('google', this.apiKeys);
-          const openaiApiKey = resolveApiKey('openai', this.apiKeys);
-
-          // 이미지 가이드라인 로드
-          let imgStyleGuide = '';
-          const imgGuideFile = join(this.projectPath, 'image_guidelines.md');
-          if (existsSync(imgGuideFile)) {
-            imgStyleGuide = (await readFile(imgGuideFile, 'utf-8')).trim();
-          }
-
-          const imgGen = new ImageGenerator({
-            googleApiKey,
-            openaiApiKey,
-            styleGuide: imgStyleGuide,
-            resolution: this.projectConfig.image_resolution || 'standard',
-            projectPath: this.projectPath,
-          });
-
-          const placeholders = imgGen.findPlaceholders(finalContent);
-          if (placeholders.length > 0) {
-            const providerLabel = imgGen.availableProvider === 'none' ? '플레이스홀더' : imgGen.availableProvider;
-            this._log(`🖼️ ${chapterId} 이미지 플레이스홀더 ${placeholders.length}개 감지 → ${providerLabel} 생성 시작`);
-            finalContent = await imgGen.processChapterImages(finalContent, this.projectPath, chapterId, progressCallback);
-          }
-        } catch (imgErr) {
-          this._log(`⚠️ ${chapterId} 이미지 생성 중 오류 (콘텐츠는 유지): ${imgErr.message}`);
-          if (progressCallback) progressCallback(`⚠️ 이미지 생성 중 오류 발생 (텍스트 콘텐츠는 정상 저장됩니다)`);
-        }
-      }
+      const finalContent = result.content;
 
       const chapterFile = join(this.docsPath, `${chapterId}.md`);
       await writeFile(chapterFile, finalContent, 'utf-8');
@@ -1546,16 +1458,7 @@ ${courseInfo}
 
           try {
             const retryResult = await this._streamGenerate(model, effectiveMaxTokens, prompt, chapterId, progressCallback, true);
-
-            // 재시도 성공 시에도 이미지 생성 처리
-            let retryContent = retryResult.content;
-            if (this.projectConfig.image_generation_enabled) {
-              try {
-                retryContent = await this._processImages(retryContent, chapterId, progressCallback);
-              } catch (imgErr) {
-                this._log(`⚠️ ${chapterId} 재시도 이미지 생성 오류: ${imgErr.message}`);
-              }
-            }
+            const retryContent = retryResult.content;
 
             const chapterFile = join(this.docsPath, `${chapterId}.md`);
             await writeFile(chapterFile, retryContent, 'utf-8');
@@ -1600,16 +1503,7 @@ ${courseInfo}
 
         try {
           const retryResult = await this._streamGenerate(model, effectiveMaxTokens, prompt, chapterId, progressCallback, true);
-
-          // 529 재시도 성공 시에도 이미지 생성 처리
-          let retryContent529 = retryResult.content;
-          if (this.projectConfig.image_generation_enabled) {
-            try {
-              retryContent529 = await this._processImages(retryContent529, chapterId, progressCallback);
-            } catch (imgErr) {
-              this._log(`⚠️ ${chapterId} 529 재시도 이미지 생성 오류: ${imgErr.message}`);
-            }
-          }
+          const retryContent529 = retryResult.content;
 
           const chapterFile = join(this.docsPath, `${chapterId}.md`);
           await writeFile(chapterFile, retryContent529, 'utf-8');
