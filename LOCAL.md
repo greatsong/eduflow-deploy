@@ -188,7 +188,6 @@ Windows는 각 공식 사이트의 인스톨러를 쓰시면 돼요.
 | 포트 7830/7829가 이미 사용 중 | `lsof -ti:7830 \| xargs kill -9`, `lsof -ti:7829 \| xargs kill -9` |
 | `API 키가 필요합니다` 메시지 | 사이드바 API 키 버튼에서 입력 또는 `.env`에 설정 |
 | 로그인 화면이 나와요 | `.env`에 `LOCAL_MODE=true`가 있는지 확인. 값이 `"true"` 따옴표로 감싸면 안 됨 |
-| 이미지 생성이 안 돼요 | `GOOGLE_API_KEY`(Gemini) 또는 `OPENAI_API_KEY`(DALL-E) 필요. 둘 다 없으면 SVG 플레이스홀더만 생성됨 |
 | EACCES permission denied (Mac) | `sudo chown -R $(whoami) ~/.npm` 후 재시도 |
 
 ---
@@ -197,7 +196,7 @@ Windows는 각 공식 사이트의 인스톨러를 쓰시면 돼요.
 
 기존 로컬용 리포(`eduflow-js`)와 이 모드의 관계를 짧게 안내드려요.
 
-- **기능**: 거의 동일해요. 일부 최신 기능(이미지 생성 v2, 2축 템플릿 등)은 이쪽이 먼저 들어와 있습니다.
+- **기능**: 거의 동일해요. 일부 최신 기능(2축 템플릿 등)은 이쪽이 먼저 들어와 있습니다.
 - **데이터 호환**: 프로젝트 폴더 구조가 같아서 `eduflow-js/projects/<name>/`을 이 리포의 `projects/`에 복사하면 그대로 열려요.
 - **API 키**: 기존 방식과 동일(브라우저 입력 or `.env`).
 - **장기 방향**: `eduflow-js` 리포는 이 LOCAL_MODE로 통합 예정. 급하게 옮기지 않으셔도 되며, 안내가 따로 갈 거예요.

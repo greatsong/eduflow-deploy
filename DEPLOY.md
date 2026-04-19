@@ -270,7 +270,6 @@ Google OAuth 쪽의 **승인된 JavaScript 원본**에도 커스텀 도메인을
 | 빌드 실패 (OOM) | 기본 512MB로 부족하면 `fly scale memory 1024`로 증가 후 재배포 |
 | 사용자가 "pending" 상태에서 갇힘 | `registrationMode`가 `approval`. Admin에서 승인하거나, `open`으로 바꾸면 이후 가입자 자동 active |
 | AI 호출이 안 돼요 | 1) 해당 프로바이더 시크릿 누락, 2) 관리자 설정의 `apiMode`와 충돌, 3) 사용자 키 설정 우선순위. [README-AI.md](./README-AI.md) 참조 |
-| 이미지 생성이 SVG로만 나와요 | `GOOGLE_API_KEY`와 `OPENAI_API_KEY` 둘 다 없어서 플레이스홀더 폴백. 키 추가 후 재시도 |
 | 배포 후에도 옛날 화면 | 브라우저 캐시 또는 Vite 번들. 강제 새로고침(Cmd+Shift+R) 시도 |
 
 ---

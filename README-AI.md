@@ -38,7 +38,6 @@
 | Frontend | React, Vite, React Router, Zustand, Tailwind CSS | 19, 6, 7, latest, 4 |
 | Backend | Express, Node.js | 5, 22 |
 | AI SDK | `@anthropic-ai/sdk`, `openai`, `@google/genai` (Gemini), 커스텀 Solar 클라이언트 | latest |
-| 이미지 | Gemini 3.1 Flash Image (기본) / OpenAI DALL-E 3 (폴백) / SVG 플레이스홀더 | - |
 | 인증 | Google Sign-In (OAuth 2.0) + JWT (7일) | - |
 | GitHub 연동 | OAuth 토큰 기반 저장소 생성·푸시·Pages 배포 | - |
 | Streaming | Server-Sent Events (SSE) | - |
@@ -67,7 +66,7 @@ eduflow-deploy/
 │   │   │   ├── Discussion.jsx       # Step 1
 │   │   │   ├── TableOfContents.jsx  # Step 2
 │   │   │   ├── Feedback.jsx         # Step 3
-│   │   │   ├── ChapterCreation.jsx  # Step 4 (이미지 생성 포함)
+│   │   │   ├── ChapterCreation.jsx  # Step 4
 │   │   │   ├── Deployment.jsx       # Step 5
 │   │   │   ├── Portfolio.jsx
 │   │   │   ├── ModelCompare.jsx     # 블라인드/공개/AI 자동 평가
@@ -86,7 +85,7 @@ eduflow-deploy/
 │   │   ├── projects.js              # 프로젝트 CRUD + 참고자료 + 템플릿 적용
 │   │   ├── discussions.js           # 대화 CRUD + SSE 채팅 + 요약
 │   │   ├── toc.js                   # 목차 SSE 생성/편집/확정/아웃라인
-│   │   ├── chapters.js              # 챕터 SSE 배치·개별 생성 + 이미지 생성 + 채팅
+│   │   ├── chapters.js              # 챕터 SSE 배치·개별 생성 + 채팅
 │   │   ├── deploy.js                # MkDocs 빌드 + DOCX + GitHub Pages
 │   │   ├── portfolio.js             # 포트폴리오 집계
 │   │   ├── compare.js               # 멀티 모델 병렬 비교 (SSE)
@@ -96,7 +95,6 @@ eduflow-deploy/
 │   │   ├── conversationManager.js
 │   │   ├── tocGenerator.js
 │   │   ├── chapterGenerator.js      # TokenBudgetManager 포함 (TPM 관리)
-│   │   ├── imageGenerator.js        # Gemini → DALL-E 폴백, SVG 플레이스홀더
 │   │   ├── progressManager.js
 │   │   ├── templateManager.js       # 8종 템플릿
 │   │   ├── referenceManager.js
@@ -168,8 +166,8 @@ npm run dev
 | 변수 | 프로바이더 |
 |------|-----------|
 | `ANTHROPIC_API_KEY` | Anthropic Claude (기본 프로바이더) |
-| `OPENAI_API_KEY` | OpenAI GPT / DALL-E |
-| `GOOGLE_API_KEY` | Google Gemini (이미지 생성 기본) |
+| `OPENAI_API_KEY` | OpenAI GPT |
+| `GOOGLE_API_KEY` | Google Gemini |
 | `UPSTAGE_API_KEY` | Upstage Solar |
 
 ### 배포 모드 전용
@@ -251,7 +249,7 @@ npm run dev
 |------|-----------|-----------|
 | Discussion | `/api/projects/:name/discussions` | SSE `/chat`, 요약 |
 | TOC | `/api/projects/:name/toc` | SSE `/generate`, `/confirm`, `/outline` |
-| Chapter | `/api/projects/:name/chapters` | SSE 배치·개별 생성, 이미지, 채팅 |
+| Chapter | `/api/projects/:name/chapters` | SSE 배치·개별 생성, 채팅 |
 | Deploy | `/api/projects/:name/deploy` | MkDocs 빌드, DOCX, GitHub Pages |
 
 ### 기타
@@ -282,7 +280,7 @@ projects/<name>/
 ├── toc.json                 # Parts > Chapters 트리
 ├── discussions/<id>.json    # 대화 이력
 ├── docs/<chapter_id>.md     # 생성된 챕터
-├── docs/images/             # 생성된 이미지 (images_meta.json 포함)
+├── docs/images/             # 업로드된 이미지 (있을 때만)
 ├── chat_history/<chapter_id>.json  # 챕터별 인터랙티브 채팅
 └── references/<filename>    # 참고자료
 ```
@@ -294,7 +292,6 @@ projects/<name>/
 - 기본 모델: `claude-sonnet-4-6`
 - 각 모델에 `input_price` / `output_price` (USD per 1M tokens) / `context` / `output_tpm` 정의
 - `default_settings`: `max_tokens`, `concurrent`
-- 이미지 모델은 별도 (`gemini-*-flash-image`, `dall-e-3`)
 
 ## 배치 생성 & Rate Limit
 
@@ -321,9 +318,8 @@ Dockerfile이 Node 22 위에 Python/MkDocs/pandoc/gh를 모두 설치하므로 F
 2. **pending 상태 사용자**: 관리자가 `admin.js`에서 `active`로 바꿔줘야 함. `registrationMode`를 `open`으로 바꾸면 이후 가입자는 즉시 `active`.
 3. **API 키 3단계 우선순위**: 헤더 → 관리자 설정 → env. 사용자가 "키를 설정했는데 안 먹는다"면 어느 계층에서 막혔는지 확인.
 4. **Google Sign-In postMessage 차단**: COOP 헤더는 `/api` 경로에만 적용되도록 분리됨 (v0.5.0).
-5. **이미지 생성 실패**: Gemini → DALL-E → SVG 플레이스홀더 순으로 폴백. 키 하나만 있어도 플레이스홀더는 항상 나감.
-6. **Fly.io 첫 접속 지연**: `auto_stop_machines = 'stop'`로 유휴 시 중지됨. 첫 요청이 느릴 수 있다고 안내.
-7. **`eduflow-js` 로컬 리포와 혼동 주의**: 그쪽은 인증 기능이 아예 없는 별도 코드베이스. 향후 이 리포의 LOCAL_MODE로 통합 예정.
+5. **Fly.io 첫 접속 지연**: `auto_stop_machines = 'stop'`로 유휴 시 중지됨. 첫 요청이 느릴 수 있다고 안내.
+6. **`eduflow-js` 로컬 리포와 혼동 주의**: 그쪽은 인증 기능이 아예 없는 별도 코드베이스. 향후 이 리포의 LOCAL_MODE로 통합 예정.
 
 ## 관련 문서
 

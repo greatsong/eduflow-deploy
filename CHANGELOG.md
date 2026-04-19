@@ -2,6 +2,25 @@
 
 모든 주요 변경사항을 기록합니다.
 
+## v0.5.1 (2026-04-20)
+
+### 🗑️ AI 이미지 자동 생성 기능 전면 제거
+
+Gemini/DALL-E 기반 이미지 자동 생성이 실제 수업용 교재에서 **어색하거나 부정확한 결과물을 자주 생성**했고, 그에 비해 API 비용이 누적되는 문제가 있어 기능을 전면 제거했습니다.
+
+- **제거된 항목**
+  - 백엔드: `server/services/imageGenerator.js`, `/chapters/:id/generate-images`, `/regenerate-image`, `/image-chat`, `/images/:imageId/rate`, `/toc/image-guidelines` 라우트
+  - 챕터 생성 파이프라인: 이미지 플레이스홀더 처리 로직, `image_generation_enabled` 설정, 프롬프트의 `{{imageGuide}}` 가이드
+  - 프론트: Admin의 "이미지 자동 생성" 토글, ProjectManager의 이미지 기능 체크박스, ChapterCreation의 "이미지 컨셉" 탭·프롬프트 검토 패널·생성 갤러리·AI 개선 채팅·재생성 버튼
+  - 템플릿: `templates/features/image_generation.json`, 16개 템플릿의 `{{imageGuide}}` 플레이스홀더, `arts-practice.json`의 default feature
+  - 관리자 설정 `imageGenerationEnabled`, `imageGenerationProvider`
+- **유지되는 항목**
+  - 기존 업로드 이미지(`docs/images/*`) 정적 서빙 및 마크다운 렌더링
+  - 이미지 라이트박스 확대 보기, Mermaid/회로도 다이어그램
+  - `@google/genai`·`openai` 패키지 (텍스트 생성에도 사용)
+- **보존되는 데이터**: 기존 프로젝트의 `images_meta.json`, `image_guidelines.md`, `docs/images/`, `config.json`의 `image_generation_enabled` 필드는 그대로 둬서 롤백에 대비함 (무해하게 무시됨)
+- **마이그레이션**: 기존 챕터 마크다운의 `<!-- IMAGE: ... -->` 주석은 렌더링 시 보이지 않지만 `scripts/cleanup-image-placeholders.js`로 일괄 제거 가능
+
 ## v0.5.0 (2026-03-30)
 
 ### 🏠 LOCAL_MODE — 로컬 간편 실행

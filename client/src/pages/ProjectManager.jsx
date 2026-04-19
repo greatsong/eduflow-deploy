@@ -187,7 +187,6 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   const [tocPrompt, setTocPrompt] = useState(draft?.tocPrompt || '');
   const [chapterPrompt, setChapterPrompt] = useState(draft?.chapterPrompt || '');
   const [includeHwDiagrams, setIncludeHwDiagrams] = useState(draft?.includeHwDiagrams || false);
-  const [imageGenerationEnabled, setImageGenerationEnabled] = useState(draft?.imageGenerationEnabled || false);
   const [assessmentLevel, setAssessmentLevel] = useState(draft?.assessmentLevel ?? 2);
   const [showSampleModal, setShowSampleModal] = useState(false);
   const [sampleContent, setSampleContent] = useState('');
@@ -216,12 +215,12 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
     if (!project) {
       saveDraft({
         form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor,
-        includeHwDiagrams, imageGenerationEnabled, assessmentLevel,
+        includeHwDiagrams, assessmentLevel,
         templateMode, selectedWhat, selectedHow, selectedFeatures, contextAnswers,
       });
     }
   }, [form, selectedTemplate, tocPrompt, chapterPrompt, showPromptEditor,
-      includeHwDiagrams, imageGenerationEnabled, assessmentLevel,
+      includeHwDiagrams, assessmentLevel,
       templateMode, selectedWhat, selectedHow, selectedFeatures, contextAnswers, project]);
 
   // 클래식 템플릿 목록 로드
@@ -312,11 +311,19 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
   useEffect(() => {
     if (!project) {
       // 새 프로젝트 모드: draft가 있으면 유지됨 (이미 useState에서 로드)
+      // 이전 프로젝트에서 설정된 dirty 플래그를 해제해, 새 프로젝트 모드에서는
+      // WHAT/HOW 선택 시 기본 프롬프트가 정상적으로 자동 채워지도록 한다.
+      tocPromptDirty.current = false;
+      chapterPromptDirty.current = false;
       setMessage('');
       return;
     }
     // 기존 프로젝트 선택 시 draft 삭제
     clearDraft();
+    // 프로젝트 전환 시 dirty 플래그 초기화. 로드 완료 후 저장값 존재 여부에 따라
+    // 다시 true로 설정된다 (아래 .then() 블록).
+    tocPromptDirty.current = false;
+    chapterPromptDirty.current = false;
 
     // 기존 프로젝트: 정보 로드
     setLoading(true);
@@ -332,10 +339,15 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
         target_audience: config.target_audience || '',
       });
       setSelectedTemplate(templateInfo.template_id || '');
-      setTocPrompt(templateInfo.toc_prompt_addition || '');
-      setChapterPrompt(templateInfo.chapter_prompt_addition || '');
+      const loadedTocPrompt = templateInfo.toc_prompt_addition || '';
+      const loadedChapterPrompt = templateInfo.chapter_prompt_addition || '';
+      setTocPrompt(loadedTocPrompt);
+      setChapterPrompt(loadedChapterPrompt);
+      // 저장된 프롬프트가 존재하면 dirty로 표시하여, 직후의 compose-preview useEffect가
+      // 이를 기본값으로 덮어쓰지 못하도록 보호한다. (기존 프로젝트 편집 시 커스텀 프롬프트 유실 방지)
+      tocPromptDirty.current = loadedTocPrompt.length > 0;
+      chapterPromptDirty.current = loadedChapterPrompt.length > 0;
       setIncludeHwDiagrams(config.include_hw_diagrams || false);
-      setImageGenerationEnabled(config.image_generation_enabled || false);
       setAssessmentLevel(config.assessment_level ?? 2);
       if (templateInfo.template_id) setShowPromptEditor(true);
       // v2 정보 로드 (template-info.json에 저장됨)
@@ -383,7 +395,6 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
       const body = {
         ...form,
         include_hw_diagrams: selectedFeatures.includes('hw_diagrams'),
-        image_generation_enabled: selectedFeatures.includes('image_generation'),
         assessment_level: assessmentLevel,
       };
 
@@ -430,7 +441,6 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
           description: form.description,
           target_audience: form.target_audience,
           include_hw_diagrams: selectedFeatures.includes('hw_diagrams'),
-          image_generation_enabled: selectedFeatures.includes('image_generation'),
           assessment_level: assessmentLevel,
         }),
       });
