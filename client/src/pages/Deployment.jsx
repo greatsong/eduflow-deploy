@@ -332,7 +332,7 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
   const handleBuild = async () => {
     updateJob('build', { loading: true });
     setMessage(null);
-    const MAX_WAIT_MS = 300000; // Fly shared-cpu 기준 빌드 3~4분 소요를 커버
+    const MAX_WAIT_MS = 600000; // Fly shared-cpu 기준 빌드 3~6분 소요를 커버 (여유 포함 10분)
     const INTERVAL = 3000;
     const start = Date.now();
     while (true) {
@@ -540,7 +540,7 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
             <div className="mt-3">
               <BuildProgress
                 label="웹사이트 빌드 중"
-                hint="Fly 환경에서는 npm install + astro build 때문에 보통 2~4분 걸립니다. 창을 닫지 말고 기다려주세요."
+                hint="Fly 환경에서는 astro build 때문에 보통 3~6분 걸립니다. 창을 닫지 말고 기다려주세요."
               />
             </div>
           )}
@@ -870,7 +870,7 @@ function PreviewTab({ project, status, statusLoading, refreshStatus }) {
   const previewUrl = `/api/projects/${project.name}/deploy/preview/index.html`;
 
   const buildAndPreview = async (cancelled = { current: false }) => {
-    const MAX_WAIT_MS = 300000; // Fly shared-cpu 기준 빌드 3~4분 소요를 커버
+    const MAX_WAIT_MS = 600000; // Fly shared-cpu 기준 빌드 3~6분 소요를 커버 (여유 포함 10분)
     const INTERVAL = 3000;
     const start = Date.now();
     setPreviewState('building');
@@ -947,7 +947,7 @@ function PreviewTab({ project, status, statusLoading, refreshStatus }) {
       <div className="py-8 px-2">
         <BuildProgress
           label="미리보기 빌드 중"
-          hint="Fly 환경에서는 보통 2~4분 걸립니다. 완료되면 자동으로 미리보기를 엽니다. 창을 닫지 마세요."
+          hint="Fly 환경에서는 보통 3~6분 걸립니다. 완료되면 자동으로 미리보기를 엽니다. 창을 닫지 마세요."
         />
       </div>
     );
@@ -959,7 +959,7 @@ function PreviewTab({ project, status, statusLoading, refreshStatus }) {
         <BuildProgress
           label="다른 빌드가 진행 중"
           tone="amber"
-          hint="기존 빌드가 끝나는 대로 자동으로 다시 시도합니다. 최대 5분까지 기다립니다."
+          hint="기존 빌드가 끝나는 대로 자동으로 다시 시도합니다. 최대 10분까지 기다립니다."
         />
       </div>
     );
