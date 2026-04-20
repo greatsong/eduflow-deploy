@@ -271,9 +271,32 @@ if (LOCAL_MODE) {
         isAdmin,
         tier: userTier,
         allowPremiumModels: TIER_CONFIG[userTier]?.allowPremiumModels ?? false,
+        welcomed: user?.welcomed === true,
       });
     } catch {
-      res.json({ status: 'active', maxProjects: 1, projectCount: 0, tier: 'starter', allowPremiumModels: false });
+      res.json({ status: 'active', maxProjects: 1, projectCount: 0, tier: 'starter', allowPremiumModels: false, welcomed: true });
+    }
+  });
+
+  // 환영 화면 1회 노출 완료 기록 (서버 저장 → 기기·브라우저 무관)
+  app.post('/api/user/welcomed', async (req, res) => {
+    try {
+      const { readFile: rf, writeFile: wf } = await import('fs/promises');
+      const usersFile = path.join(DATA_DIR, 'users.json');
+      if (!existsSync(usersFile)) return res.json({ success: true });
+
+      await withLock(usersFile, async () => {
+        const users = JSON.parse(await rf(usersFile, 'utf-8'));
+        const idx = users.findIndex(u => u.googleId === req.user?.googleId);
+        if (idx < 0) return;
+        if (users[idx].welcomed === true) return;
+        users[idx].welcomed = true;
+        users[idx].welcomedAt = new Date().toISOString();
+        await wf(usersFile, JSON.stringify(users, null, 2), 'utf-8');
+      });
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
     }
   });
 

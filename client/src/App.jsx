@@ -415,9 +415,8 @@ export default function App() {
 
         if (status === 'active') {
           const user = getUserInfo();
-          const welcomeKey = `eduflow_welcomed_${user?.email}`;
-          if (!localStorage.getItem(welcomeKey)) {
-            localStorage.setItem(welcomeKey, 'true');
+          // 환영 화면 노출 여부는 서버에 저장 (기기·브라우저 무관, 한 번만 노출)
+          if (data.welcomed !== true) {
             localStorage.setItem(`eduflow_maxProjects_${user?.email}`, String(mp));
             localStorage.setItem(`eduflow_tier_${user?.email}`, userTier);
             setShowWelcome(true);
@@ -516,7 +515,17 @@ export default function App() {
         user={getUserInfo()}
         maxProjects={maxProjects}
         tier={tier}
-        onContinue={() => setShowWelcome(false)}
+        onContinue={() => {
+          // 서버에 '환영 화면을 봤다'고 기록 (실패해도 UX는 계속 진행)
+          const token = getAuthToken();
+          if (token) {
+            fetch('/api/user/welcomed', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+            }).catch(() => {});
+          }
+          setShowWelcome(false);
+        }}
       />
     );
   }
