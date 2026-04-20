@@ -985,7 +985,36 @@ ${navYaml}`;
 
       console.log(`[EduFlow] GitHub API 배포 시작: ${username}/${repoName}`);
 
-      // 2. site/ 폴더 확인
+      // 2. 배포 대상 URL에 맞게 재빌드
+      //    미리보기 빌드는 siteUrl=''·basePath='/'로 생성돼 GitHub Pages(/<repo>/)에서
+      //    CSS·JS 경로가 전부 404 난다. 배포 직전에 siteUrl/basePath를 박아 다시 빌드.
+      const siteUrl = `https://${username}.github.io`;
+      const basePath = `/${repoName}/`;
+
+      let theme = 'starlight';
+      let siteName = repoName;
+      let colorTheme = 'sky';
+      let accentColor;
+      const configPath = join(this.projectPath, 'config.json');
+      if (existsSync(configPath)) {
+        try {
+          const cfg = JSON.parse(await readFile(configPath, 'utf-8'));
+          theme = cfg.deployment?.theme || 'starlight';
+          siteName = cfg.title || repoName;
+          colorTheme = cfg.deployment?.color_theme || 'sky';
+          accentColor = cfg.deployment?.accent_color;
+        } catch { /* skip */ }
+      }
+
+      console.log(`[EduFlow] 배포용 재빌드: base=${basePath}, site=${siteUrl}`);
+      const rebuild = await this.buildWebsite({
+        theme, siteName, creator, colorTheme, accentColor, siteUrl, basePath,
+      });
+      if (!rebuild.success) {
+        return { success: false, message: `배포 직전 재빌드 실패: ${rebuild.message}` };
+      }
+
+      // 3. site/ 폴더 확인
       if (!existsSync(this.sitePath)) {
         return { success: false, message: '빌드된 사이트(site/)가 없습니다. 먼저 웹사이트 빌드를 실행하세요.' };
       }

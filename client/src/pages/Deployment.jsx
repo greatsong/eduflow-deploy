@@ -259,9 +259,17 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
   const [siteName, setSiteName] = useState('');
   const [theme, setTheme] = useState('material');
   const [colorTheme, setColorTheme] = useState('indigo');
+  const [buildTheme, setBuildTheme] = useState('starlight'); // 'starlight' | 'mkdocs'
   const [repoName, setRepoName] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const deployResultRef = useRef(null);
+
+  // 저장된 빌드 테마 복원 (status 로드 후)
+  useEffect(() => {
+    if (status?.buildTheme === 'starlight' || status?.buildTheme === 'mkdocs') {
+      setBuildTheme(status.buildTheme);
+    }
+  }, [status?.buildTheme]);
 
   // 작업 상태는 부모에서 주입 (탭 전환 시에도 유지)
   const configLoading = jobs.config.loading;
@@ -315,7 +323,7 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
       const creator = user ? { name: user.name, affiliation: user.affiliation } : null;
       const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/config`, {
         method: 'POST',
-        body: JSON.stringify({ siteName, theme, colorTheme, creator }),
+        body: JSON.stringify({ siteName, theme, colorTheme, creator, buildTheme }),
       });
       if (result.success) {
         setMessage({ type: 'success', text: '✅ 웹사이트 설정 생성 완료!' });
@@ -339,6 +347,7 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
       try {
         const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/build`, {
           method: 'POST',
+          body: JSON.stringify({ theme: buildTheme, colorTheme }),
         });
         setMessage(result.success
           ? { type: 'success', text: '✅ 웹사이트 빌드 완료!' }
@@ -658,7 +667,7 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
                 <div className="mt-4">
                   <BuildProgress
                     label="GitHub Pages 배포 중"
-                    hint="리포지토리 생성 → 빌드 → 배포까지 보통 1~3분 걸립니다. 이 화면을 유지해주세요."
+                    hint="올바른 경로로 재빌드 → 리포 생성 → 업로드까지 보통 6~10분 걸립니다. 이 화면을 유지해주세요."
                   />
                 </div>
               )}
