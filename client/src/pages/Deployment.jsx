@@ -1006,6 +1006,17 @@ function PreviewTab({ project, status, statusLoading, refreshStatus }) {
         if (e.status === 409 && Date.now() - start < MAX_WAIT_MS) {
           setPreviewState('waiting');
           await new Promise((r) => setTimeout(r, INTERVAL));
+          // 같은 프로젝트 빌드가 방금 끝났다면 site/가 채워졌을 수 있음 →
+          // status를 확인해 siteReady면 재빌드 없이 바로 미리보기로 진입.
+          try {
+            const s = await apiFetch(`/api/projects/${project.name}/deploy/status`);
+            if (cancelled.current) return;
+            if (s?.siteReady) {
+              setPreviewState('ready');
+              refreshStatus?.();
+              return;
+            }
+          } catch { /* 확인 실패해도 계속 재시도 */ }
           continue;
         }
         setErrorMsg(e.message);
