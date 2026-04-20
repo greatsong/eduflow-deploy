@@ -157,6 +157,30 @@ export default function Feedback() {
     clearMessages();
   };
 
+  // 챕터 필드(제목·시간 등) 인라인 수정
+  const handleUpdateChapterField = async (partIdx, chIdx, field, newValue) => {
+    if (!currentProject || !toc) return;
+    const newToc = {
+      ...toc,
+      parts: toc.parts.map((p, pi) => pi !== partIdx ? p : {
+        ...p,
+        chapters: p.chapters.map((c, ci) => ci !== chIdx ? c : { ...c, [field]: newValue }),
+      }),
+    };
+    setToc(newToc); // 낙관적 갱신
+    try {
+      await apiFetch(`/api/projects/${currentProject.name}/toc`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toc: newToc }),
+      });
+    } catch (e) {
+      alert(`저장 실패: ${e.message}`);
+      // 실패 시 서버 값으로 복원
+      apiFetch(`/api/projects/${currentProject.name}/toc`).then((d) => setToc(d.toc)).catch(() => {});
+    }
+  };
+
   // AI 응답에서 목차 수정 적용
   const handleApplyTocUpdate = async (tocData, msgIdx) => {
     if (!currentProject || applyingToc) return;
@@ -265,9 +289,9 @@ export default function Feedback() {
       </div>
 
       {/* 메인: 채팅 + 목차 */}
-      <div className="flex-1 flex gap-6 min-h-0">
+      <div className="flex-1 flex gap-6 min-h-0 min-w-0">
         {/* 채팅 영역 (1/2) */}
-        <div className="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 bg-white rounded-xl border border-gray-200 p-4">
           <ChatInterface
             messages={messages}
             isStreaming={isStreaming}
@@ -306,7 +330,7 @@ export default function Feedback() {
         </div>
 
         {/* 목차 + 확정 영역 (1/2) */}
-        <div className="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="font-semibold text-gray-900 mb-3">📋 현재 목차</h3>
 
           {/* 목차 표시 */}
@@ -321,16 +345,43 @@ export default function Feedback() {
 
             <hr className="border-gray-200" />
 
-            {(toc.parts || []).map((part) => (
+            {(toc.parts || []).map((part, pi) => (
               <div key={part.part_number} className="space-y-1">
                 <p className="font-medium text-gray-900 text-sm">
                   📚 Part {part.part_number}: {part.part_title}
                 </p>
                 <p className="text-xs text-gray-500 italic">{part.part_description}</p>
-                {(part.chapters || []).map((ch) => (
-                  <div key={ch.chapter_id} className="ml-4 text-sm text-gray-700 flex justify-between">
-                    <span>{ch.chapter_id}: {ch.chapter_title}</span>
-                    <span className="text-xs text-gray-400">{ch.estimated_time}</span>
+                {(part.chapters || []).map((ch, ci) => (
+                  <div key={ch.chapter_id} className="ml-4 text-sm text-gray-700 flex items-center gap-2">
+                    <span className="text-gray-400 shrink-0">{ch.chapter_id}:</span>
+                    <input
+                      type="text"
+                      defaultValue={ch.chapter_title || ''}
+                      placeholder="챕터 제목"
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v && v !== (ch.chapter_title || '')) handleUpdateChapterField(pi, ci, 'chapter_title', v);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
+                      }}
+                      className="flex-1 min-w-0 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400"
+                      title="제목을 수정하고 Enter 또는 포커스 이동 시 저장됩니다"
+                    />
+                    <input
+                      type="text"
+                      defaultValue={ch.estimated_time || ''}
+                      placeholder="예: 50분"
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v !== (ch.estimated_time || '')) handleUpdateChapterField(pi, ci, 'estimated_time', v);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
+                      }}
+                      className="w-20 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-emerald-400 focus:border-emerald-400"
+                      title="시간을 수정하고 Enter 또는 포커스 이동 시 저장됩니다"
+                    />
                   </div>
                 ))}
               </div>

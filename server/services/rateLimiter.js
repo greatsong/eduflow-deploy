@@ -5,9 +5,10 @@
  * 대기 큐 + 30초 타임아웃으로 과부하 시 503 반환.
  */
 
-// 프로바이더별 기본 RPM (보수적 설정)
+// 프로바이더별 기본 RPM
+// anthropic: Tier 4 계정 기준 상향. 콘솔의 실제 한도 70~80% 수준으로 유지.
 const DEFAULT_RPM = {
-  anthropic: 40,
+  anthropic: 500,
   openai: 50,
   google: 50,
   upstage: 30,

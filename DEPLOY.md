@@ -219,6 +219,29 @@ fly scale count 2             # 인스턴스 추가 (세션 공유 없음 주의
 
 > **주의**: 에듀플로 v0.5.0 기준 세션은 JWT로 무상태지만, **프로젝트 데이터는 볼륨에 저장**돼요. 멀티 인스턴스로 늘리면 같은 볼륨을 공유하도록 추가 설정이 필요합니다.
 
+### 현재 운영 구성 (2026-04-20)
+
+20명 내외 동시 사용 기준 설정:
+
+| 항목 | 값 | 근거 |
+|---|---|---|
+| VM 메모리 | **1GB** (`fly.toml` `memory = '1gb'`) | 512MB에선 PDF 파싱 + 스트리밍 + 대화 컨텍스트 누적 시 OOM 위험 |
+| Anthropic API 티어 | **Tier 4** (계정 기준) | 고수준 RPM/TPM 한도 확보 |
+| 자체 rateLimiter RPM | **anthropic: 500** ([rateLimiter.js](server/services/rateLimiter.js)) | Tier 4 한도의 70~80% 수준. Tier 변경 시 함께 조정 |
+| SSE 사용자당 슬롯 | **5개** ([sseManager.js](server/services/sseManager.js)) | heartbeat 30초, `res.on('close')` 기반 회수 |
+| 인스턴스 수 | **1대** (HA 없음) | 배포·크래시 시 일시 중단 있음. 상태 외부화(Redis/Postgres) 없이는 2대 불가 |
+
+**티어·한도 변경 시 체크리스트**:
+1. Anthropic 콘솔에서 실제 RPM/TPM 확인
+2. `server/services/rateLimiter.js`의 `DEFAULT_RPM.anthropic`를 실제 한도의 70~80%로 조정
+3. `fly deploy`로 반영
+4. 이 문서의 표 업데이트
+
+**비용 메모**:
+- 1GB VM ≈ $6/월 (auto_stop_machines로 유휴 시간엔 과금 중단, 실질 더 낮음)
+- 볼륨 `/data` 1GB ≈ $0.15/월
+- Anthropic API는 실사용 토큰 종량제 (티어 승급에 선결제 필요)
+
 ### 볼륨 접근 (백업·복구)
 ```bash
 fly ssh console

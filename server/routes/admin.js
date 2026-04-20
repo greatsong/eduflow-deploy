@@ -32,7 +32,13 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// 모든 관리자 라우트에 관리자 인증 적용
+// 관리자 여부 체크 — 비관리자도 조용히 false 반환 (403 에러 로그 방지)
+router.get('/check', (req, res) => {
+  const isAdmin = !!req.user?.email && ADMIN_EMAILS.includes(req.user.email);
+  res.json({ isAdmin });
+});
+
+// 아래 라우트부터 관리자 인증 필수
 router.use(requireAdmin);
 
 // ============================================================
@@ -598,11 +604,6 @@ router.delete('/projects/:id', asyncHandler(async (req, res) => {
   console.log(`[EduFlow] 프로젝트 삭제: ${projectId}`, results);
   res.json({ success: true, results });
 }));
-
-// GET /api/admin/check - 관리자 여부 확인 (프론트엔드용)
-router.get('/check', (req, res) => {
-  res.json({ isAdmin: true });
-});
 
 export default router;
 export { requireAdmin };

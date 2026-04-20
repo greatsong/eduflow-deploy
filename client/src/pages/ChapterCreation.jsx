@@ -603,6 +603,8 @@ function BatchTab({ project, onComplete }) {
   const [sampleChapterId, setSampleChapterId] = useState('');
   const [sampleContent, setSampleContent] = useState('');
   const [sampleTokens, setSampleTokens] = useState(null);
+  const [sampleProgress, setSampleProgress] = useState('');
+  const [sampleElapsed, setSampleElapsed] = useState(0);
   const [guidelines, setGuidelines] = useState('');
   const [guidelinesSaved, setGuidelinesSaved] = useState(true);
   const [showSample, setShowSample] = useState(true);
@@ -637,30 +639,48 @@ function BatchTab({ project, onComplete }) {
       .catch(() => {});
   }, [project]);
 
-  // 샘플 챕터 생성
+  // 샘플 챕터 생성 (SSE 진행 스트리밍)
   const handleGenerateSample = async () => {
     if (!sampleChapterId) return;
     setSamplePhase('generating');
     setSampleContent('');
     setSampleTokens(null);
+    setSampleProgress('🔬 생성 준비 중...');
+    setSampleElapsed(0);
+    const startTs = Date.now();
+    const elapsedTimer = setInterval(() => {
+      setSampleElapsed(Math.floor((Date.now() - startTs) / 1000));
+    }, 1000);
+
     try {
-      const result = await apiFetch(`/api/projects/${project.name}/chapters/${sampleChapterId}/generate`, {
-        method: 'POST',
-        body: { model, maxTokens },
-      });
-      if (result.success) {
+      let finalResult = null;
+      await apiStreamPost(
+        `/api/projects/${project.name}/chapters/${sampleChapterId}/generate`,
+        { model, maxTokens },
+        {
+          onProgress: (data) => {
+            if (data.message) setSampleProgress(data.message);
+          },
+          onDone: (data) => { finalResult = data?.result || null; },
+          onError: (err) => { throw err; },
+        }
+      );
+
+      if (finalResult?.success) {
         const data = await apiFetch(`/api/projects/${project.name}/chapters/${sampleChapterId}`);
         setSampleContent(data.content || '');
-        setSampleTokens({ input: result.input_tokens || 0, output: result.output_tokens || 0 });
+        setSampleTokens({ input: finalResult.input_tokens || 0, output: finalResult.output_tokens || 0 });
         setSamplePhase('review');
         loadChapters();
       } else {
-        setSampleContent(`❌ 생성 실패: ${result.message}`);
+        setSampleContent(`❌ 생성 실패: ${finalResult?.error || finalResult?.message || '알 수 없는 오류'}`);
         setSamplePhase('review');
       }
     } catch (err) {
       setSampleContent(`❌ 오류: ${err.message}`);
       setSamplePhase('review');
+    } finally {
+      clearInterval(elapsedTimer);
     }
   };
 
@@ -970,11 +990,15 @@ function BatchTab({ project, onComplete }) {
 
                   {/* 샘플 결과 미리보기 */}
                   {samplePhase === 'generating' && (
-                    <div className="flex-1 flex items-center justify-center py-12 border border-gray-200 rounded-lg bg-gray-50">
-                      <div className="text-center">
+                    <div className="flex-1 flex items-center justify-center py-8 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className="text-center w-full px-6">
                         <div className="animate-spin text-3xl mb-3">🔬</div>
-                        <p className="text-sm text-gray-500">샘플 챕터를 생성하고 있습니다...</p>
-                        <p className="text-xs text-gray-400 mt-1">모델: {model}</p>
+                        <p className="text-sm font-medium text-gray-700 mb-2 break-words">
+                          {sampleProgress || '샘플 챕터를 생성하고 있습니다...'}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          모델: {model} · 경과: {Math.floor(sampleElapsed / 60)}분 {sampleElapsed % 60}초
+                        </p>
                       </div>
                     </div>
                   )}

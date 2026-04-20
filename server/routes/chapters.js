@@ -27,8 +27,7 @@ function projectPath(id) {
 
 function sseHeaders(res) {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.flushHeaders();
 }
 
@@ -233,48 +232,64 @@ router.post('/generate-all', requireApiKey, requireModelAccess, asyncHandler(asy
   res.end();
 }));
 
-// POST /api/projects/:id/chapters/:chapterId/generate - 단일 챕터 생성
+// POST /api/projects/:id/chapters/:chapterId/generate - 단일 챕터 생성 (SSE 진행 스트리밍)
 router.post('/:chapterId/generate', requireApiKey, requireModelAccess, asyncHandler(async (req, res) => {
   const { model, maxTokens } = req.body;
   const projPath = projectPath(req.params.id);
   const chapterId = req.params.chapterId;
 
-  const gen = new ChapterGenerator(projPath, req.apiKeys);
-  await gen.init();
+  const sse = registerSSE(req, res);
+  if (!sse.ok) return res.status(429).json({ message: '동시 SSE 연결이 너무 많습니다.' });
+  sseHeaders(res);
 
-  // TOC에서 챕터 정보 조회
-  const info = await gen.findChapterInToc(chapterId);
+  // 즉시 진행 메시지 — 프록시 idle 방지 + 사용자 즉각 피드백
+  sseSend(res, { type: 'progress', message: '🔬 챕터 생성 준비 중...' });
 
-  const useModel = model || 'claude-opus-4-7';
-  const result = await gen.generateChapter(
-    chapterId,
-    info.chapter_title || chapterId,
-    info.part_context || '',
-    useModel,
-    maxTokens || 12000,
-    null,
-    info.estimated_time || '',
-    info.total_chapters || 0,
-    info.current_chapter_num || 0
-  );
+  const progressCallback = (message) => {
+    if (res.writableEnded || res.destroyed) return;
+    try { sseSend(res, { type: 'progress', message }); } catch { /* ignore */ }
+  };
 
-  if (result.success) {
-    const pm = new ProgressManager(projPath);
-    await pm.markChapterCompleted(chapterId);
+  try {
+    const gen = new ChapterGenerator(projPath, req.apiKeys);
+    await gen.init();
 
-    // 토큰 사용량 기록
-    const provider = detectProvider(useModel);
-    tokenUsage.record({
-      userId: req.user?.googleId, userName: req.user?.name,
-      userEmail: req.user?.email,
-      projectId: req.params.id, action: 'chapter',
-      provider, model: useModel,
-      inputTokens: result.input_tokens, outputTokens: result.output_tokens,
-      keySource: req.headers[`x-${provider}-key`] ? 'user' : 'server',
-    });
+    const info = await gen.findChapterInToc(chapterId);
+
+    const useModel = model || 'claude-opus-4-7';
+    const result = await gen.generateChapter(
+      chapterId,
+      info.chapter_title || chapterId,
+      info.part_context || '',
+      useModel,
+      maxTokens || 12000,
+      progressCallback,
+      info.estimated_time || '',
+      info.total_chapters || 0,
+      info.current_chapter_num || 0
+    );
+
+    if (result.success) {
+      const pm = new ProgressManager(projPath);
+      await pm.markChapterCompleted(chapterId);
+
+      const provider = detectProvider(useModel);
+      tokenUsage.record({
+        userId: req.user?.googleId, userName: req.user?.name,
+        userEmail: req.user?.email,
+        projectId: req.params.id, action: 'chapter',
+        provider, model: useModel,
+        inputTokens: result.input_tokens, outputTokens: result.output_tokens,
+        keySource: req.headers[`x-${provider}-key`] ? 'user' : 'server',
+      });
+    }
+
+    sseSend(res, { type: 'done', result });
+  } catch (e) {
+    sseSend(res, { type: 'error', message: e.message });
   }
 
-  res.json(result);
+  res.end();
 }));
 
 // POST /api/projects/:id/chapters/:chapterId/chat - 인터랙티브 채팅 (SSE)

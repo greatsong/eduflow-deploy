@@ -268,8 +268,9 @@ ${referencesText}
     const provider = detectProvider(useModel);
     const apiKey = resolveApiKey(provider, req.apiKeys);
 
-    // Step 3은 목차 JSON 출력이 필요하므로 토큰 여유 확보
-    const chatMaxTokens = step === '3' ? 8192 : 2048;
+    // Step 3은 목차 전체 JSON 출력이 필요하므로 넉넉히 확보 (큰 목차 대응)
+    // 8192에선 파트 5개·챕터 20개 넘어가면 잘림 → 24000으로 확장
+    const chatMaxTokens = step === '3' ? 24000 : 2048;
 
     const result = await streamChat({
       provider, apiKey, model: useModel,

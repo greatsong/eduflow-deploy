@@ -1,66 +1,94 @@
 /**
- * SSE 연결 관리자 — 동시 연결 추적, 사용자별 제한, 자동 정리
+ * SSE 연결 관리자 — 동시 연결 추적, 사용자별 제한, stale 자동 정리
  *
- * 20~30명 동시 사용 시 SSE 좀비 연결 메모리 누수를 방지한다.
+ * 멀티유저(googleId 기준 격리) + heartbeat 기반 좀비 연결 회수.
  */
 
-const MAX_PER_USER = 3;       // 사용자당 최대 SSE 동시 연결
-const IDLE_TIMEOUT = 5 * 60 * 1000; // 5분 무활동 타임아웃
+const MAX_PER_USER = 5;                 // 사용자당 최대 SSE 동시 연결
+const HEARTBEAT_INTERVAL = 30 * 1000;   // 30초마다 heartbeat(SSE 주석) 전송
+const HARD_TIMEOUT = 60 * 60 * 1000;    // 안전망: 1시간 절대 타임아웃
 
-// userId → Set<connectionId>
+// userId → Map<connId, { res, heartbeat, hardTimer }>
 const connections = new Map();
 let nextId = 1;
 
+/** 좀비(이미 닫힌) 연결을 정리한다. */
+function reclaimStale(userConns) {
+  for (const [cid, conn] of userConns) {
+    if (conn.res.writableEnded || conn.res.destroyed || conn.res.closed) {
+      clearInterval(conn.heartbeat);
+      clearTimeout(conn.hardTimer);
+      userConns.delete(cid);
+    }
+  }
+}
+
 /**
  * SSE 연결 등록. 제한 초과 시 false 반환.
- *
- * @param {import('express').Request} req
- * @param {import('express').Response} res
  * @returns {{ ok: boolean, connId: number | null }}
  */
 export function registerSSE(req, res) {
   const userId = req.user?.googleId || req.ip || 'anonymous';
-  const userConns = connections.get(userId) || new Set();
+  let userConns = connections.get(userId);
+  if (!userConns) {
+    userConns = new Map();
+    connections.set(userId, userConns);
+  }
+
+  // 새 연결 등록 전에 좀비 슬롯 회수
+  reclaimStale(userConns);
 
   if (userConns.size >= MAX_PER_USER) {
     return { ok: false, connId: null };
   }
 
   const connId = nextId++;
-  userConns.add(connId);
-  connections.set(userId, userConns);
+  const conn = { res, heartbeat: null, hardTimer: null };
 
-  // 무활동 타임아웃
-  const timer = setTimeout(() => {
-    cleanup();
-    try { res.end(); } catch { /* already closed */ }
-  }, IDLE_TIMEOUT);
+  // 프록시 버퍼링 방지 (flushHeaders는 라우트에서 호출됨)
+  if (!res.headersSent) {
+    res.setHeader('X-Accel-Buffering', 'no');
+  }
 
-  // 연결 종료 시 정리
   const cleanup = () => {
-    clearTimeout(timer);
-    const set = connections.get(userId);
-    if (set) {
-      set.delete(connId);
-      if (set.size === 0) connections.delete(userId);
-    }
+    if (!userConns.has(connId)) return;
+    clearInterval(conn.heartbeat);
+    clearTimeout(conn.hardTimer);
+    userConns.delete(connId);
+    if (userConns.size === 0) connections.delete(userId);
   };
 
+  // heartbeat: SSE 주석 라인 전송. write 실패 = 연결 끊김 → cleanup.
+  conn.heartbeat = setInterval(() => {
+    if (res.writableEnded || res.destroyed || res.closed) {
+      cleanup();
+      return;
+    }
+    try {
+      res.write(': hb\n\n');
+    } catch {
+      try { res.end(); } catch { /* already closed */ }
+      cleanup();
+    }
+  }, HEARTBEAT_INTERVAL);
+
+  // 안전망: 1시간 절대 타임아웃 (정상 작업은 훨씬 이전에 끝남)
+  conn.hardTimer = setTimeout(() => {
+    try { res.end(); } catch { /* already closed */ }
+    cleanup();
+  }, HARD_TIMEOUT);
+
+  // 클라이언트 이탈 감지 — req/res 양쪽 리스닝 (SSE에선 res.close가 더 신뢰도 높음)
+  res.on('close', cleanup);
+  res.on('error', cleanup);
   req.on('close', cleanup);
   req.on('error', cleanup);
 
+  userConns.set(connId, conn);
   return { ok: true, connId };
 }
 
-/**
- * SSE 활동 갱신 — 타임아웃 리셋용
- * 실제로는 registerSSE에서 타임아웃을 고정하므로,
- * 필요 시 별도 구현. 현재는 5분 절대 타임아웃.
- */
-
-/**
- * 현재 활성 연결 통계
- */
+/** 현재 활성 연결 통계 (디버깅/관리자 대시보드용) */
 export function getStats() {
   let total = 0;
   const perUser = {};
@@ -68,5 +96,5 @@ export function getStats() {
     perUser[userId] = set.size;
     total += set.size;
   }
-  return { total, perUser };
+  return { total, perUser, maxPerUser: MAX_PER_USER };
 }

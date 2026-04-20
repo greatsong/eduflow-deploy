@@ -40,6 +40,17 @@
       "guidance": "추상 개념을 도식·표·다이어그램으로 풀어내는 능력이 강하다. 교사용 지도서, 시각화 중심 교재에 1순위."
     },
     {
+      "id": "claude-opus-4-6",
+      "provider": "anthropic",
+      "display_name": "Claude Opus 4.6",
+      "tier": "최고 품질",
+      "pricing": { "input": 5.0, "output": 25.0 },
+      "max_output_tokens": 42000,
+      "recommended_for": ["챕터 생성", "고품질 콘텐츠", "에이전트"],
+      "strengths": ["시각화", "구조화", "안정적 장문 생성"],
+      "guidance": "Opus 4.7의 직전 버전. 4.7과 유사한 장점을 가지며 결과물 톤이 조금 다르다. 비교 검토용으로 활용 가능."
+    },
+    {
       "id": "claude-sonnet-4-6",
       "provider": "anthropic",
       "display_name": "Claude Sonnet 4.6",
