@@ -88,7 +88,9 @@ export async function apiFetch(path, options = {}) {
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message || `API 오류: ${res.status}`);
+    const err = new Error(error.message || `API 오류: ${res.status}`);
+    err.status = res.status;
+    throw err;
   }
 
   return res.json();

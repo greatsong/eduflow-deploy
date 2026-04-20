@@ -4,7 +4,41 @@ import { useProjectStore } from '../stores/projectStore';
 import { apiFetch } from '../api/client';
 import { getUserInfo, getAuthToken } from '../components/EntryForm';
 
-const TABS = ['🌐 MkDocs 웹사이트', '📄 DOCX 문서', '🔍 미리보기'];
+const TABS = ['🌐 웹사이트', '📄 DOCX 문서', '🔍 미리보기'];
+
+// 장시간 작업 진행 배너 — 경과 시간 + 예상 소요 안내
+function BuildProgress({ label, tone = 'emerald', hint }) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const mm = Math.floor(seconds / 60);
+  const ss = seconds % 60;
+  const elapsed = mm > 0 ? `${mm}분 ${ss}초` : `${ss}초`;
+  const tones = {
+    emerald: {
+      bg: 'bg-emerald-50', border: 'border-emerald-200',
+      text: 'text-emerald-800', sub: 'text-emerald-700',
+      spin: 'border-emerald-500',
+    },
+    amber: {
+      bg: 'bg-amber-50', border: 'border-amber-200',
+      text: 'text-amber-800', sub: 'text-amber-700',
+      spin: 'border-amber-500',
+    },
+  };
+  const c = tones[tone] || tones.emerald;
+  return (
+    <div className={`flex items-start gap-3 p-3 rounded-lg ${c.bg} border ${c.border}`}>
+      <span className={`mt-0.5 inline-block w-4 h-4 border-2 ${c.spin} border-t-transparent rounded-full animate-spin shrink-0`} />
+      <div className="flex-1">
+        <p className={`text-sm font-medium ${c.text}`}>{label} · {elapsed} 경과</p>
+        {hint && <p className={`text-xs ${c.sub} mt-1`}>{hint}</p>}
+      </div>
+    </div>
+  );
+}
 
 export default function Deployment() {
   const navigate = useNavigate();
@@ -13,6 +47,38 @@ export default function Deployment() {
   const [status, setStatus] = useState(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [githubUser, setGithubUser] = useState(null); // { username, avatarUrl }
+
+  // 작업별 상태(로딩/결과/메시지)를 부모가 보관 → 탭 전환에도 유지
+  const initialJobs = {
+    config: { loading: false },
+    build: { loading: false },
+    deploy: { loading: false, result: null },
+    docx: { loading: false, result: null },
+    mkdocsMessage: null, // config/build 공용 상태 메시지
+  };
+  const [jobs, setJobs] = useState(initialJobs);
+  const updateJob = (key, patch) =>
+    setJobs((prev) =>
+      key === 'mkdocsMessage'
+        ? { ...prev, mkdocsMessage: patch }
+        : { ...prev, [key]: { ...prev[key], ...patch } }
+    );
+
+  // 프로젝트가 바뀌면 이전 프로젝트의 결과가 새 프로젝트에 잘못 남지 않도록 리셋
+  useEffect(() => {
+    setJobs(initialJobs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.name]);
+
+  const refreshStatus = async () => {
+    if (!currentProject) return;
+    try {
+      const data = await apiFetch(`/api/projects/${currentProject.name}/deploy/status`);
+      setStatus(data);
+    } catch {
+      setStatus(null);
+    }
+  };
 
   useEffect(() => {
     if (!currentProject) return;
@@ -53,8 +119,11 @@ export default function Deployment() {
       {status && (
         <div className="mb-4 flex items-center gap-4 text-xs text-gray-500">
           <span>도구 상태:</span>
-          <span className={status.tools.mkdocs ? 'text-green-600' : 'text-red-500'}>
-            {status.tools.mkdocs ? '✅' : '❌'} mkdocs
+          <span className={status.tools.node ? 'text-green-600' : 'text-red-500'}>
+            {status.tools.node ? '✅' : '❌'} node
+          </span>
+          <span className={status.tools.npm ? 'text-green-600' : 'text-red-500'}>
+            {status.tools.npm ? '✅' : '❌'} npm
           </span>
           <span className={status.tools.pandoc ? 'text-green-600' : 'text-red-500'}>
             {status.tools.pandoc ? '✅' : '❌'} pandoc
@@ -95,10 +164,28 @@ export default function Deployment() {
             statusLoading={statusLoading}
             githubUser={githubUser}
             setGithubUser={setGithubUser}
+            refreshStatus={refreshStatus}
+            jobs={jobs}
+            updateJob={updateJob}
           />
         )}
-        {activeTab === 1 && <DocxTab project={currentProject} status={status} statusLoading={statusLoading} />}
-        {activeTab === 2 && <PreviewTab project={currentProject} status={status} statusLoading={statusLoading} />}
+        {activeTab === 1 && (
+          <DocxTab
+            project={currentProject}
+            status={status}
+            statusLoading={statusLoading}
+            jobs={jobs}
+            updateJob={updateJob}
+          />
+        )}
+        {activeTab === 2 && (
+          <PreviewTab
+            project={currentProject}
+            status={status}
+            statusLoading={statusLoading}
+            refreshStatus={refreshStatus}
+          />
+        )}
       </div>
 
       {/* 포트폴리오로 */}
@@ -115,7 +202,7 @@ export default function Deployment() {
 }
 
 // =============================================
-// 탭 1: MkDocs 웹사이트
+// 탭 1: 웹사이트 (Astro Starlight 빌드)
 // =============================================
 // 레포 이름 추천 함수 (제목 기반)
 function suggestRepoNames(projectName, title = '') {
@@ -168,16 +255,22 @@ const GitHubIcon = ({ className = 'w-5 h-5' }) => (
   </svg>
 );
 
-function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }) {
+function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, refreshStatus, jobs, updateJob }) {
   const [siteName, setSiteName] = useState('');
   const [theme, setTheme] = useState('material');
   const [colorTheme, setColorTheme] = useState('indigo');
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
   const [repoName, setRepoName] = useState('');
-  const [deployResult, setDeployResult] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
   const deployResultRef = useRef(null);
+
+  // 작업 상태는 부모에서 주입 (탭 전환 시에도 유지)
+  const configLoading = jobs.config.loading;
+  const buildLoading = jobs.build.loading;
+  const deployLoading = jobs.deploy.loading;
+  const message = jobs.mkdocsMessage;
+  const deployResult = jobs.deploy.result;
+  const setMessage = (m) => updateJob('mkdocsMessage', m);
+  const setDeployResult = (r) => updateJob('deploy', { result: r });
 
   useEffect(() => {
     // TOC에서 제목 가져오기 → 제목 기반 레포 이름 추천
@@ -196,8 +289,8 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
         if (!repoName && names.length > 0) setRepoName(names[0]);
       });
 
-    // 이전 배포 기록 로드
-    if (status?.deploymentInfo) {
+    // 이전 배포 기록 로드 — 방금 만든 배포 결과가 있으면 덮어쓰지 않음
+    if (status?.deploymentInfo && !deployResult) {
       setDeployResult({
         success: true,
         site_url: status.deploymentInfo.site_url,
@@ -211,10 +304,11 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
         if (match) setRepoName(match[1]);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, status]);
 
   const handleGenerateConfig = async () => {
-    setLoading(true);
+    updateJob('config', { loading: true });
     setMessage(null);
     try {
       const user = getUserInfo();
@@ -223,29 +317,45 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
         method: 'POST',
         body: JSON.stringify({ siteName, theme, colorTheme, creator }),
       });
-      setMessage(result.success
-        ? { type: 'success', text: '✅ MkDocs 설정 생성 완료!' }
-        : { type: 'error', text: result.message });
+      if (result.success) {
+        setMessage({ type: 'success', text: '✅ 웹사이트 설정 생성 완료!' });
+        await refreshStatus?.();
+      } else {
+        setMessage({ type: 'error', text: result.message });
+      }
     } catch (e) {
       setMessage({ type: 'error', text: e.message });
     }
-    setLoading(false);
+    updateJob('config', { loading: false });
   };
 
   const handleBuild = async () => {
-    setLoading(true);
+    updateJob('build', { loading: true });
     setMessage(null);
-    try {
-      const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/build`, {
-        method: 'POST',
-      });
-      setMessage(result.success
-        ? { type: 'success', text: '✅ 웹사이트 빌드 완료!' }
-        : { type: 'error', text: result.message || result.error });
-    } catch (e) {
-      setMessage({ type: 'error', text: e.message });
+    const MAX_WAIT_MS = 300000; // Fly shared-cpu 기준 빌드 3~4분 소요를 커버
+    const INTERVAL = 3000;
+    const start = Date.now();
+    while (true) {
+      try {
+        const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/build`, {
+          method: 'POST',
+        });
+        setMessage(result.success
+          ? { type: 'success', text: '✅ 웹사이트 빌드 완료!' }
+          : { type: 'error', text: result.message || result.error });
+        await refreshStatus?.();
+        break;
+      } catch (e) {
+        if (e.status === 409 && Date.now() - start < MAX_WAIT_MS) {
+          setMessage({ type: 'info', text: '⏳ 다른 빌드가 진행 중이에요. 잠시 뒤 자동으로 다시 시도합니다…' });
+          await new Promise((r) => setTimeout(r, INTERVAL));
+          continue;
+        }
+        setMessage({ type: 'error', text: e.message });
+        break;
+      }
     }
-    setLoading(false);
+    updateJob('build', { loading: false });
   };
 
   const handleGitHubConnect = async () => {
@@ -299,8 +409,7 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
 
   const handleDeploy = async () => {
     if (!repoName.trim()) return;
-    setLoading(true);
-    setDeployResult(null);
+    updateJob('deploy', { loading: true, result: null });
     try {
       const user = getUserInfo();
       const creator = user ? { name: user.name, affiliation: user.affiliation } : null;
@@ -315,13 +424,12 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
         method: 'POST',
         body: JSON.stringify(body),
       });
-      setDeployResult(result);
+      updateJob('deploy', { loading: false, result });
       setTimeout(() => deployResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
     } catch (e) {
-      setDeployResult({ success: false, message: e.message });
+      updateJob('deploy', { loading: false, result: { success: false, message: e.message } });
       setTimeout(() => deployResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
     }
-    setLoading(false);
   };
 
   // 배포 URL 미리보기
@@ -339,16 +447,13 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
     );
   }
 
-  if (!status?.tools?.mkdocs) {
+  if (!status?.tools?.node || !status?.tools?.npm) {
     return (
       <div className="bg-amber-50 rounded-xl p-6">
-        <h3 className="font-semibold text-amber-800 mb-2">MkDocs가 설치되지 않았습니다</h3>
+        <h3 className="font-semibold text-amber-800 mb-2">Node.js / npm이 설치되지 않았습니다</h3>
         <p className="text-sm text-amber-700 mb-3">
-          MkDocs를 설치하면 마크다운을 아름다운 웹사이트로 변환할 수 있습니다.
+          Astro Starlight 기반 웹사이트 빌드에는 Node.js와 npm이 필요합니다. 관리자에게 문의해주세요.
         </p>
-        <code className="block bg-amber-100 p-3 rounded text-sm text-amber-900">
-          pip install mkdocs mkdocs-material
-        </code>
       </div>
     );
   }
@@ -357,7 +462,7 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
     <div className="space-y-6">
       {/* 설정 */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-900 mb-4">🔧 MkDocs 설정</h3>
+        <h3 className="font-semibold text-gray-900 mb-4">🔧 웹사이트 설정</h3>
         <div className="flex gap-4 mb-4">
           <div className="flex-1">
             <label className="block text-xs text-gray-500 mb-1">사이트 제목</label>
@@ -400,14 +505,18 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
 
         <button
           onClick={handleGenerateConfig}
-          disabled={loading}
+          disabled={configLoading}
           className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 text-white text-sm rounded-xl font-medium hover:from-emerald-700 hover:to-green-700 disabled:opacity-50 transition-all shadow-sm"
         >
-          {loading ? '생성 중...' : '🔨 MkDocs 프로젝트 생성'}
+          {configLoading ? '생성 중...' : '🔨 웹사이트 프로젝트 생성'}
         </button>
 
         {message && (
-          <div className={`mt-3 p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          <div className={`mt-3 p-3 rounded-lg text-sm ${
+            message.type === 'success' ? 'bg-green-50 text-green-700' :
+            message.type === 'info' ? 'bg-amber-50 text-amber-700' :
+            'bg-red-50 text-red-700'
+          }`}>
             {message.text}
           </div>
         )}
@@ -422,11 +531,19 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
           </p>
           <button
             onClick={handleBuild}
-            disabled={loading}
+            disabled={buildLoading}
             className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 disabled:opacity-50"
           >
-            {loading ? '빌드 중...' : '📦 빌드'}
+            {buildLoading ? '빌드 중...' : '📦 빌드'}
           </button>
+          {buildLoading && (
+            <div className="mt-3">
+              <BuildProgress
+                label="웹사이트 빌드 중"
+                hint="Fly 환경에서는 npm install + astro build 때문에 보통 2~4분 걸립니다. 창을 닫지 말고 기다려주세요."
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -520,10 +637,10 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
                 </div>
                 <button
                   onClick={handleDeploy}
-                  disabled={loading || !repoName.trim()}
+                  disabled={deployLoading || !repoName.trim()}
                   className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 min-w-[100px]"
                 >
-                  {loading ? (
+                  {deployLoading ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       배포 중...
@@ -537,15 +654,12 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
                 📋 배포 시 에듀플로 포트폴리오에 자동 등록됩니다.
               </p>
 
-              {loading && !deployResult && (
-                <div className="mt-4 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50">
-                  <div className="flex items-center gap-3">
-                    <span className="inline-block w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                    <div>
-                      <p className="font-semibold text-emerald-800">GitHub Pages 배포 진행 중...</p>
-                      <p className="text-xs text-emerald-600 mt-1">리포지토리 생성 → 빌드 → 배포까지 1~2분 정도 걸립니다. 이 화면을 유지해주세요.</p>
-                    </div>
-                  </div>
+              {deployLoading && !deployResult && (
+                <div className="mt-4">
+                  <BuildProgress
+                    label="GitHub Pages 배포 중"
+                    hint="리포지토리 생성 → 빌드 → 배포까지 보통 1~3분 걸립니다. 이 화면을 유지해주세요."
+                  />
                 </div>
               )}
               {deployResult && (
@@ -609,10 +723,11 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser }
 // =============================================
 // 탭 2: DOCX 문서
 // =============================================
-function DocxTab({ project, status, statusLoading }) {
+function DocxTab({ project, status, statusLoading, jobs, updateJob }) {
   const [title, setTitle] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const loading = jobs.docx.loading;
+  const result = jobs.docx.result;
+  const setResult = (r) => updateJob('docx', { result: r });
 
   useEffect(() => {
     apiFetch(`/api/projects/${project.name}/toc`)
@@ -644,18 +759,16 @@ function DocxTab({ project, status, statusLoading }) {
   }
 
   const handleGenerate = async () => {
-    setLoading(true);
-    setResult(null);
+    updateJob('docx', { loading: true, result: null });
     try {
       const res = await apiFetch(`/api/projects/${project.name}/deploy/docx`, {
         method: 'POST',
         body: JSON.stringify({ title }),
       });
-      setResult(res);
+      updateJob('docx', { loading: false, result: res });
     } catch (e) {
-      setResult({ success: false, message: e.message });
+      updateJob('docx', { loading: false, result: { success: false, message: e.message } });
     }
-    setLoading(false);
   };
 
   const handleDownload = async () => {
@@ -713,6 +826,15 @@ function DocxTab({ project, status, statusLoading }) {
         {(status?.chapterCount || 0) === 0 && (
           <p className="text-sm text-amber-600">⚠️ 챕터가 없습니다. Step 4에서 챕터를 먼저 생성하세요.</p>
         )}
+
+        {loading && (
+          <div className="mt-3">
+            <BuildProgress
+              label="DOCX 생성 중"
+              hint="챕터 수에 따라 수십 초~2분 정도 걸립니다. pandoc이 실패하면 자동으로 JS 폴백으로 재시도합니다."
+            />
+          </div>
+        )}
       </div>
 
       {result && (
@@ -741,42 +863,59 @@ function DocxTab({ project, status, statusLoading }) {
 // =============================================
 // 탭 3: 미리보기 (빌드 결과를 Express로 서빙)
 // =============================================
-function PreviewTab({ project, status, statusLoading }) {
-  const [previewState, setPreviewState] = useState('idle'); // idle | building | ready | error
+function PreviewTab({ project, status, statusLoading, refreshStatus }) {
+  const [previewState, setPreviewState] = useState('idle'); // idle | building | waiting | ready | error
   const [errorMsg, setErrorMsg] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const previewUrl = `/api/projects/${project.name}/deploy/preview/index.html`;
 
   const buildAndPreview = async (cancelled = { current: false }) => {
+    const MAX_WAIT_MS = 300000; // Fly shared-cpu 기준 빌드 3~4분 소요를 커버
+    const INTERVAL = 3000;
+    const start = Date.now();
     setPreviewState('building');
-    try {
-      const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/build`, {
-        method: 'POST',
-      });
 
-      if (cancelled.current) return;
-
-      if (result.success) {
-        setPreviewState('ready');
-      } else {
-        setErrorMsg(result.message || result.error || '빌드 실패');
-        setPreviewState('error');
-      }
-    } catch (e) {
-      if (!cancelled.current) {
+    while (!cancelled.current) {
+      try {
+        const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/build`, {
+          method: 'POST',
+        });
+        if (cancelled.current) return;
+        if (result.success) {
+          setPreviewState('ready');
+          refreshStatus?.();
+        } else {
+          setErrorMsg(result.message || result.error || '빌드 실패');
+          setPreviewState('error');
+        }
+        return;
+      } catch (e) {
+        if (cancelled.current) return;
+        if (e.status === 409 && Date.now() - start < MAX_WAIT_MS) {
+          setPreviewState('waiting');
+          await new Promise((r) => setTimeout(r, INTERVAL));
+          continue;
+        }
         setErrorMsg(e.message);
         setPreviewState('error');
+        return;
       }
     }
   };
 
   useEffect(() => {
-    if (statusLoading || !status?.tools?.mkdocs || !status?.hasMkdocsYml) return;
+    if (statusLoading || !status?.tools?.node || !status?.tools?.npm || !status?.hasMkdocsYml) return;
 
     const cancelled = { current: false };
-    buildAndPreview(cancelled);
+    // 사용자가 '새로고침'을 누르지 않았고 빌드된 사이트가 이미 있으면 불필요한 재빌드 생략
+    if (retryCount === 0 && status.siteReady) {
+      setPreviewState('ready');
+    } else {
+      buildAndPreview(cancelled);
+    }
     return () => { cancelled.current = true; };
-  }, [project, retryCount, statusLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, retryCount, statusLoading, status?.siteReady]);
 
   if (statusLoading) {
     return (
@@ -787,10 +926,10 @@ function PreviewTab({ project, status, statusLoading }) {
     );
   }
 
-  if (!status?.tools?.mkdocs) {
+  if (!status?.tools?.node || !status?.tools?.npm) {
     return (
       <div className="text-center py-16">
-        <p className="text-gray-400 text-sm">MkDocs가 설치되지 않았습니다.</p>
+        <p className="text-gray-400 text-sm">Node.js / npm이 설치되지 않았습니다. 관리자에게 문의하세요.</p>
       </div>
     );
   }
@@ -798,16 +937,30 @@ function PreviewTab({ project, status, statusLoading }) {
   if (!status?.hasMkdocsYml) {
     return (
       <div className="text-center py-16">
-        <p className="text-gray-400 text-sm">먼저 "MkDocs 웹사이트" 탭에서 MkDocs 프로젝트를 생성하세요.</p>
+        <p className="text-gray-400 text-sm">먼저 "웹사이트" 탭에서 프로젝트를 생성하세요.</p>
       </div>
     );
   }
 
   if (previewState === 'building') {
     return (
-      <div className="text-center py-16">
-        <div className="inline-block w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3" />
-        <p className="text-gray-500 text-sm">MkDocs 빌드 중...</p>
+      <div className="py-8 px-2">
+        <BuildProgress
+          label="미리보기 빌드 중"
+          hint="Fly 환경에서는 보통 2~4분 걸립니다. 완료되면 자동으로 미리보기를 엽니다. 창을 닫지 마세요."
+        />
+      </div>
+    );
+  }
+
+  if (previewState === 'waiting') {
+    return (
+      <div className="py-8 px-2">
+        <BuildProgress
+          label="다른 빌드가 진행 중"
+          tone="amber"
+          hint="기존 빌드가 끝나는 대로 자동으로 다시 시도합니다. 최대 5분까지 기다립니다."
+        />
       </div>
     );
   }
@@ -845,7 +998,7 @@ function PreviewTab({ project, status, statusLoading }) {
           src={previewUrl}
           className="flex-1 w-full rounded-xl border border-gray-200"
           style={{ minHeight: '500px' }}
-          title="MkDocs Preview"
+          title="웹사이트 미리보기"
         />
       </div>
     );

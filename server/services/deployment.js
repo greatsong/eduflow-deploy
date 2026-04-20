@@ -1,5 +1,5 @@
-import { readFile, writeFile, readdir, stat, mkdir, unlink, copyFile, rm, cp } from 'fs/promises';
-import { join, dirname, relative } from 'path';
+import { readFile, writeFile, readdir, stat, mkdir, unlink, copyFile, rm, cp, symlink, lstat } from 'fs/promises';
+import { join, dirname, relative, resolve as resolvePath } from 'path';
 import { existsSync, createReadStream } from 'fs';
 import { fileURLToPath } from 'url';
 import { execa } from 'execa';
@@ -11,6 +11,16 @@ const PORTFOLIO_REPO_OWNER = 'greatsong';
 const PORTFOLIO_REPO_NAME = 'eduflow-portfolio';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Astro Starlight 공통 node_modules 캐시 경로
+ * - Docker 이미지 빌드 시점에 `server/services/starlight-cache/`에 설치된 공용 캐시
+ * - 런타임 Step 5 빌드가 프로젝트별 .starlight-build/node_modules를 이 경로로 심볼릭 링크 연결
+ * - 환경변수 STARLIGHT_NODE_MODULES_CACHE로 오버라이드 가능 (테스트/로컬용)
+ */
+const STARLIGHT_CACHE_DIR = resolvePath(__dirname, 'starlight-cache');
+const STARLIGHT_CACHE_NODE_MODULES = process.env.STARLIGHT_NODE_MODULES_CACHE
+  || join(STARLIGHT_CACHE_DIR, 'node_modules');
 
 export class Deployment {
   constructor(projectPath) {
@@ -530,15 +540,47 @@ ${navYaml}`;
       cfg = cfg.replaceAll('__SITE__', siteUrl).replaceAll('__BASE__', basePath);
       await writeFile(configPath, cfg, 'utf-8');
 
-      // 3) npm install (node_modules 없을 때만)
+      // 3) node_modules 준비 — 공용 캐시 심볼릭 링크 우선, 실패 시 npm install 폴백
+      //    Dockerfile이 /app/server/services/starlight-cache/node_modules 를 미리 설치해 둔다.
+      //    프로젝트별 buildDir/node_modules를 그 경로로 링크만 걸면 런타임 npm install(60~120초)이 사라진다.
+      //    - generateStarlightProject가 매번 buildDir을 rm -rf 후 재생성하므로 여기서 항상 새로 링크
+      //    - 읽기 전용 재사용이 전제 (Astro build는 node_modules를 읽기만 함)
+      //    - BUILD_LOCK_KEY로 빌드가 직렬화되므로 동시성 문제 없음
       const nodeModulesPath = join(result.buildDir, 'node_modules');
-      if (!existsSync(nodeModulesPath)) {
-        await execa('npm', ['install', '--no-audit', '--no-fund', '--prefer-offline'], {
-          cwd: result.buildDir,
-          timeout: 600000,
-          stdio: 'pipe',
-          shell: true,
-        });
+      let cacheMode = 'none';
+      let cacheFallbackReason = null;
+
+      if (existsSync(STARLIGHT_CACHE_NODE_MODULES)) {
+        try {
+          // 혹시 generateStarlightProject 이후 누군가 생성해 뒀다면 정리 (보통은 없음)
+          if (existsSync(nodeModulesPath)) {
+            const st = await lstat(nodeModulesPath);
+            if (st.isSymbolicLink() || st.isDirectory()) {
+              await rm(nodeModulesPath, { recursive: true, force: true });
+            }
+          }
+          await symlink(STARLIGHT_CACHE_NODE_MODULES, nodeModulesPath, 'dir');
+          cacheMode = 'symlink';
+        } catch (linkErr) {
+          cacheFallbackReason = `symlink 실패: ${linkErr.message}`;
+          console.warn('[buildStarlight] 공용 캐시 링크 실패, npm install 폴백:', linkErr.message);
+        }
+      } else {
+        cacheFallbackReason = `공용 캐시 없음 (${STARLIGHT_CACHE_NODE_MODULES})`;
+      }
+
+      if (cacheMode === 'none') {
+        // 폴백: 링크 실패 또는 이미지에 캐시가 없는 환경 (예: 로컬 개발 초기)
+        if (!existsSync(nodeModulesPath)) {
+          console.warn('[buildStarlight] npm install 폴백 실행:', cacheFallbackReason);
+          await execa('npm', ['install', '--no-audit', '--no-fund', '--prefer-offline'], {
+            cwd: result.buildDir,
+            timeout: 600000,
+            stdio: 'pipe',
+            shell: true,
+          });
+          cacheMode = 'npm-install';
+        }
       }
 
       // 4) astro build
@@ -563,9 +605,21 @@ ${navYaml}`;
       // 7) 빌드 캐시 정리 — Fly Volume 용량 보호.
       //    generateStarlightProject가 매번 buildDir을 rm -rf 후 재생성하므로
       //    캐시를 남겨도 재활용되지 않는다. site/로 복사가 끝났으니 삭제 안전.
-      //    .starlight-build/ 전체(~200MB의 node_modules 포함) 제거.
+      //    .starlight-build/ 전체 제거.
+      //
+      //    ⚠️ 중요: node_modules가 공용 캐시(/app/server/services/starlight-cache/node_modules)로의
+      //    심볼릭 링크라면 먼저 unlink 후 rm -rf를 해야 한다. Node의 fs.rm(recursive)은
+      //    내부 심볼릭 링크를 따라가지 않지만, 혹시 모를 버전/플랫폼 차이 대비로 명시적으로 먼저 제거.
       let cleanupSavedBytes = 0;
       try {
+        if (cacheMode === 'symlink' && existsSync(nodeModulesPath)) {
+          try {
+            const linkStat = await lstat(nodeModulesPath);
+            if (linkStat.isSymbolicLink()) {
+              await unlink(nodeModulesPath);
+            }
+          } catch { /* 이미 없어도 무방 */ }
+        }
         const before = await import('fs/promises').then((m) => m.stat(result.buildDir)).catch(() => null);
         await rm(result.buildDir, { recursive: true, force: true });
         if (before) cleanupSavedBytes = before.size || 0;
@@ -582,6 +636,7 @@ ${navYaml}`;
         imageCount: result.imageCount,
         stdout: build.stdout?.slice(-2000) || '',
         cleanupSavedBytes,
+        cacheMode, // 'symlink' | 'npm-install' — Step 5 빌드 시간 진단용
       };
     } catch (e) {
       // 실패 시에는 buildDir을 남겨둬서 디버깅 가능하도록 한다.

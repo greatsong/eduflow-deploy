@@ -726,7 +726,7 @@ function ProjectSettingsTab({ project, onCreated, onUpdated, atLimit }) {
               <option value={4}>인터랙티브 — 채점+피드백+재도전</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              {assessmentLevel === 4 ? '퀴즈 엔진이 MkDocs에 자동 포함됩니다' : '챕터 끝에 선택한 방식의 평가가 포함됩니다'}
+              {assessmentLevel === 4 ? '퀴즈 엔진이 배포 웹사이트에 자동 포함됩니다' : '챕터 끝에 선택한 방식의 평가가 포함됩니다'}
             </p>
           </div>
 

@@ -163,7 +163,7 @@ export default function Home() {
             { step: 2, icon: '📋', title: '목차 작성', desc: '체계적 구조 자동 생성', color: 'from-green-500 to-green-600' },
             { step: 3, icon: '✅', title: '피드백', desc: '목차 검토 및 확정', color: 'from-teal-500 to-teal-600' },
             { step: 4, icon: '✍️', title: '챕터 제작', desc: '배치/개별 자동 작성', color: 'from-cyan-500 to-cyan-600' },
-            { step: 5, icon: '🚀', title: '배포', desc: 'MkDocs · DOCX · 웹', color: 'from-sky-500 to-sky-600' },
+            { step: 5, icon: '🚀', title: '배포', desc: '웹사이트 · DOCX · GitHub Pages', color: 'from-sky-500 to-sky-600' },
             { step: 6, icon: '📊', title: '포트폴리오', desc: '완성된 교재 모아보기', color: 'from-violet-500 to-violet-600' },
           ].map((item) => (
             <div key={item.step} className="group relative overflow-hidden bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default">
@@ -213,7 +213,7 @@ export default function Home() {
             <div className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-2xl p-5 border border-teal-100">
               <span className="text-2xl mb-2 block">🌐</span>
               <h3 className="font-bold text-gray-900 text-sm mb-1">원클릭 웹 배포</h3>
-              <p className="text-xs text-gray-600 leading-relaxed">MkDocs + GitHub Pages로 교재 사이트를 즉시 배포. 교사 컴퓨터에만 머무르지 않습니다.</p>
+              <p className="text-xs text-gray-600 leading-relaxed">Astro Starlight + GitHub Pages로 교재 사이트를 즉시 배포. 교사 컴퓨터에만 머무르지 않습니다.</p>
             </div>
           </div>
         </div>
