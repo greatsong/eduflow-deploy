@@ -988,8 +988,9 @@ ${navYaml}`;
       // 2. 배포 대상 URL에 맞게 재빌드
       //    미리보기 빌드는 siteUrl=''·basePath='/'로 생성돼 GitHub Pages(/<repo>/)에서
       //    CSS·JS 경로가 전부 404 난다. 배포 직전에 siteUrl/basePath를 박아 다시 빌드.
-      const siteUrl = `https://${username}.github.io`;
-      const basePath = `/${repoName}/`;
+      //    (변수명은 이 함수 뒷부분의 반환용 siteUrl과 충돌 방지를 위해 astro* prefix)
+      const astroSiteUrl = `https://${username}.github.io`;
+      const astroBasePath = `/${repoName}/`;
 
       let theme = 'starlight';
       let siteName = repoName;
@@ -1006,9 +1007,10 @@ ${navYaml}`;
         } catch { /* skip */ }
       }
 
-      console.log(`[EduFlow] 배포용 재빌드: base=${basePath}, site=${siteUrl}`);
+      console.log(`[EduFlow] 배포용 재빌드: base=${astroBasePath}, site=${astroSiteUrl}`);
       const rebuild = await this.buildWebsite({
-        theme, siteName, creator, colorTheme, accentColor, siteUrl, basePath,
+        theme, siteName, creator, colorTheme, accentColor,
+        siteUrl: astroSiteUrl, basePath: astroBasePath,
       });
       if (!rebuild.success) {
         return { success: false, message: `배포 직전 재빌드 실패: ${rebuild.message}` };
