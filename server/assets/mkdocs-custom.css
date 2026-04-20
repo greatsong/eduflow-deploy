@@ -631,6 +631,26 @@ summary:focus-visible {
   border-color: #4a4a5e;
 }
 
+/* 방어: JS가 실행되기 전 또는 CDN 로드 실패 시 소스 텍스트가 그대로
+   노출되는 것을 방지. mermaid가 렌더링에 성공하면 div.mermaid 안에
+   svg가 생기고 이 규칙은 더 이상 적용되지 않는다. */
+.mermaid:not([data-processed="true"]):not(:has(svg)) {
+  position: relative;
+  min-height: 80px;
+  color: transparent;
+}
+.mermaid:not([data-processed="true"]):not(:has(svg))::before {
+  content: "⏳ 다이어그램 준비 중…";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ef-gray-600, #64748b);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
 /* ============================================================
    강조 텍스트
    ============================================================ */
