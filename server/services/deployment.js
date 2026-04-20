@@ -535,9 +535,16 @@ ${navYaml}`;
       });
 
       // 2) placeholder 치환 (astro.config.mjs의 __SITE__ / __BASE__ 모두)
+      //    siteUrl이 비어 있으면 site: '' 로 치환되어 Astro 5의 URL 유효성 검증이 실패하므로
+      //    site 필드 자체를 제거. site는 GitHub Pages 배포용이고 미리보기 빌드에는 불필요.
       const configPath = join(result.buildDir, 'astro.config.mjs');
       let cfg = await readFile(configPath, 'utf-8');
-      cfg = cfg.replaceAll('__SITE__', siteUrl).replaceAll('__BASE__', basePath);
+      if (siteUrl) {
+        cfg = cfg.replaceAll('__SITE__', siteUrl);
+      } else {
+        cfg = cfg.replace(/^\s*site:\s*'__SITE__',?\s*\n/m, '');
+      }
+      cfg = cfg.replaceAll('__BASE__', basePath);
       await writeFile(configPath, cfg, 'utf-8');
 
       // 3) node_modules 준비 — 공용 캐시 심볼릭 링크 우선, 실패 시 npm install 폴백
