@@ -547,11 +547,12 @@ ${navYaml}`;
       cfg = cfg.replaceAll('__BASE__', basePath);
       await writeFile(configPath, cfg, 'utf-8');
 
-      // 3) node_modules 준비 — 공용 캐시 심볼릭 링크 우선, 실패 시 npm install 폴백
+      // 3) node_modules 준비 — 공용 캐시를 buildDir로 복사
       //    Dockerfile이 /app/server/services/starlight-cache/node_modules 를 미리 설치해 둔다.
-      //    프로젝트별 buildDir/node_modules를 그 경로로 링크만 걸면 런타임 npm install(60~120초)이 사라진다.
-      //    - generateStarlightProject가 매번 buildDir을 rm -rf 후 재생성하므로 여기서 항상 새로 링크
-      //    - 읽기 전용 재사용이 전제 (Astro build는 node_modules를 읽기만 함)
+      //    과거엔 symlink 시도했으나 Astro/Vite의 절대 경로 resolver가
+      //    "No cached compile metadata found" 오류를 내 실패 → 복사로 전환.
+      //    복사는 200MB 기준 10~30초로 npm install(60~120초)보다 여전히 2~4배 빠름.
+      //    - generateStarlightProject가 매번 buildDir을 rm -rf 후 재생성하므로 여기서 항상 새로 복사
       //    - BUILD_LOCK_KEY로 빌드가 직렬화되므로 동시성 문제 없음
       const nodeModulesPath = join(result.buildDir, 'node_modules');
       let cacheMode = 'none';
@@ -559,18 +560,17 @@ ${navYaml}`;
 
       if (existsSync(STARLIGHT_CACHE_NODE_MODULES)) {
         try {
-          // 혹시 generateStarlightProject 이후 누군가 생성해 뒀다면 정리 (보통은 없음)
           if (existsSync(nodeModulesPath)) {
-            const st = await lstat(nodeModulesPath);
-            if (st.isSymbolicLink() || st.isDirectory()) {
-              await rm(nodeModulesPath, { recursive: true, force: true });
-            }
+            await rm(nodeModulesPath, { recursive: true, force: true });
           }
-          await symlink(STARLIGHT_CACHE_NODE_MODULES, nodeModulesPath, 'dir');
-          cacheMode = 'symlink';
-        } catch (linkErr) {
-          cacheFallbackReason = `symlink 실패: ${linkErr.message}`;
-          console.warn('[buildStarlight] 공용 캐시 링크 실패, npm install 폴백:', linkErr.message);
+          // cp -r 사용: fs.cp보다 빠르고 퍼미션/심볼릭 링크 유지가 자연스러움
+          await execa('cp', ['-r', STARLIGHT_CACHE_NODE_MODULES, nodeModulesPath], {
+            timeout: 300000,
+          });
+          cacheMode = 'copy';
+        } catch (copyErr) {
+          cacheFallbackReason = `복사 실패: ${copyErr.message}`;
+          console.warn('[buildStarlight] 공용 캐시 복사 실패, npm install 폴백:', copyErr.message);
         }
       } else {
         cacheFallbackReason = `공용 캐시 없음 (${STARLIGHT_CACHE_NODE_MODULES})`;
@@ -612,21 +612,9 @@ ${navYaml}`;
       // 7) 빌드 캐시 정리 — Fly Volume 용량 보호.
       //    generateStarlightProject가 매번 buildDir을 rm -rf 후 재생성하므로
       //    캐시를 남겨도 재활용되지 않는다. site/로 복사가 끝났으니 삭제 안전.
-      //    .starlight-build/ 전체 제거.
-      //
-      //    ⚠️ 중요: node_modules가 공용 캐시(/app/server/services/starlight-cache/node_modules)로의
-      //    심볼릭 링크라면 먼저 unlink 후 rm -rf를 해야 한다. Node의 fs.rm(recursive)은
-      //    내부 심볼릭 링크를 따라가지 않지만, 혹시 모를 버전/플랫폼 차이 대비로 명시적으로 먼저 제거.
+      //    .starlight-build/ 전체 제거 (복사된 node_modules 포함).
       let cleanupSavedBytes = 0;
       try {
-        if (cacheMode === 'symlink' && existsSync(nodeModulesPath)) {
-          try {
-            const linkStat = await lstat(nodeModulesPath);
-            if (linkStat.isSymbolicLink()) {
-              await unlink(nodeModulesPath);
-            }
-          } catch { /* 이미 없어도 무방 */ }
-        }
         const before = await import('fs/promises').then((m) => m.stat(result.buildDir)).catch(() => null);
         await rm(result.buildDir, { recursive: true, force: true });
         if (before) cleanupSavedBytes = before.size || 0;
@@ -643,7 +631,7 @@ ${navYaml}`;
         imageCount: result.imageCount,
         stdout: build.stdout?.slice(-2000) || '',
         cleanupSavedBytes,
-        cacheMode, // 'symlink' | 'npm-install' — Step 5 빌드 시간 진단용
+        cacheMode, // 'copy' | 'npm-install' — Step 5 빌드 시간 진단용
       };
     } catch (e) {
       // 실패 시에는 buildDir을 남겨둬서 디버깅 가능하도록 한다.
