@@ -999,7 +999,7 @@ ${navYaml}`;
 
       // 2. site/ 폴더 확인
       if (!existsSync(this.sitePath)) {
-        return { success: false, message: '빌드된 사이트(site/)가 없습니다. 먼저 MkDocs 빌드를 실행하세요.' };
+        return { success: false, message: '빌드된 사이트(site/)가 없습니다. 먼저 웹사이트 빌드를 실행하세요.' };
       }
 
       // 3. 리포 존재 확인 → 없으면 생성
