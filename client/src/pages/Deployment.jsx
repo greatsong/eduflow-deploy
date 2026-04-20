@@ -167,6 +167,7 @@ export default function Deployment() {
             refreshStatus={refreshStatus}
             jobs={jobs}
             updateJob={updateJob}
+            goToPreview={() => setActiveTab(2)}
           />
         )}
         {activeTab === 1 && (
@@ -255,7 +256,7 @@ const GitHubIcon = ({ className = 'w-5 h-5' }) => (
   </svg>
 );
 
-function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, refreshStatus, jobs, updateJob }) {
+function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, refreshStatus, jobs, updateJob, goToPreview }) {
   const [siteName, setSiteName] = useState('');
   const [theme, setTheme] = useState('material');
   const [colorTheme, setColorTheme] = useState('indigo');
@@ -338,20 +339,27 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
   };
 
   const handleBuild = async () => {
-    updateJob('build', { loading: true });
+    updateJob('build', { loading: true, result: null });
     setMessage(null);
     const MAX_WAIT_MS = 600000; // Fly shared-cpu 기준 빌드 3~6분 소요를 커버 (여유 포함 10분)
     const INTERVAL = 3000;
     const start = Date.now();
     while (true) {
       try {
+        const startedAt = Date.now();
         const result = await apiFetch(`/api/projects/${project.name}/deploy/mkdocs/build`, {
           method: 'POST',
           body: JSON.stringify({ theme: buildTheme, colorTheme }),
         });
+        const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
         setMessage(result.success
           ? { type: 'success', text: '✅ 웹사이트 빌드 완료!' }
           : { type: 'error', text: result.message || result.error });
+        updateJob('build', {
+          result: result.success
+            ? { success: true, elapsedSec, theme: buildTheme, finishedAt: Date.now() }
+            : { success: false, message: result.message || result.error },
+        });
         await refreshStatus?.();
         break;
       } catch (e) {
@@ -361,6 +369,7 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
           continue;
         }
         setMessage({ type: 'error', text: e.message });
+        updateJob('build', { result: { success: false, message: e.message } });
         break;
       }
     }
@@ -472,6 +481,60 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
       {/* 설정 */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="font-semibold text-gray-900 mb-4">🔧 웹사이트 설정</h3>
+
+        {/* 빌드 방식 선택 */}
+        <div className="mb-4">
+          <label className="block text-xs text-gray-500 mb-2">빌드 방식</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              {
+                id: 'starlight',
+                label: 'Astro Starlight',
+                tagline: '세련된 디자인',
+                desc: '기본 권장. 최신 디자인과 반응형 레이아웃. 빌드는 3~6분 소요.',
+              },
+              {
+                id: 'mkdocs',
+                label: 'MkDocs Material',
+                tagline: '빠른 빌드',
+                desc: '클래식 문서 스타일. 빌드는 보통 30초 이내. mkdocs CLI 필요.',
+                warn: status && status.tools && status.tools.mkdocs === false,
+              },
+            ].map((opt) => {
+              const selected = buildTheme === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setBuildTheme(opt.id)}
+                  className={`text-left p-3 rounded-xl border transition-all ${
+                    selected
+                      ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`text-sm font-semibold ${selected ? 'text-emerald-800' : 'text-gray-900'}`}>
+                      {opt.label}
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                      selected ? 'border-emerald-400 text-emerald-700 bg-white' : 'border-gray-200 text-gray-500'
+                    }`}>
+                      {opt.tagline}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{opt.desc}</p>
+                  {opt.warn && (
+                    <p className="text-[11px] text-amber-700 mt-1.5">
+                      ⚠️ 서버에 mkdocs가 설치되어 있지 않아 이 옵션으로 빌드가 실패할 수 있습니다.
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="flex gap-4 mb-4">
           <div className="flex-1">
             <label className="block text-xs text-gray-500 mb-1">사이트 제목</label>
@@ -549,8 +612,48 @@ function MkDocsTab({ project, status, statusLoading, githubUser, setGithubUser, 
             <div className="mt-3">
               <BuildProgress
                 label="웹사이트 빌드 중"
-                hint="Fly 환경에서는 astro build 때문에 보통 3~6분 걸립니다. 창을 닫지 말고 기다려주세요."
+                hint={buildTheme === 'mkdocs'
+                  ? 'MkDocs는 보통 10~30초 안에 끝납니다.'
+                  : 'Fly 환경에서는 astro build 때문에 보통 3~6분 걸립니다. 창을 닫지 말고 기다려주세요.'}
               />
+            </div>
+          )}
+          {!buildLoading && jobs.build.result && (
+            <div className={`mt-3 p-3 rounded-lg border flex items-start gap-3 ${
+              jobs.build.result.success
+                ? 'bg-emerald-50 border-emerald-200'
+                : 'bg-red-50 border-red-200'
+            }`}>
+              <div className="flex-1">
+                {jobs.build.result.success ? (
+                  <>
+                    <p className="text-sm font-semibold text-emerald-800">
+                      ✅ 빌드 성공!
+                    </p>
+                    <p className="text-xs text-emerald-700 mt-1">
+                      {jobs.build.result.theme === 'mkdocs' ? 'MkDocs Material' : 'Astro Starlight'}
+                      {typeof jobs.build.result.elapsedSec === 'number' && (
+                        <> · {jobs.build.result.elapsedSec < 60
+                          ? `${jobs.build.result.elapsedSec}초`
+                          : `${Math.floor(jobs.build.result.elapsedSec / 60)}분 ${jobs.build.result.elapsedSec % 60}초`} 소요</>
+                      )}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold text-red-800">❌ 빌드 실패</p>
+                    <p className="text-xs text-red-700 mt-1">{jobs.build.result.message}</p>
+                  </>
+                )}
+              </div>
+              {jobs.build.result.success && goToPreview && (
+                <button
+                  onClick={goToPreview}
+                  className="shrink-0 px-3 py-1.5 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 font-medium"
+                >
+                  미리보기 →
+                </button>
+              )}
             </div>
           )}
         </div>
