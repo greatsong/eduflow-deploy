@@ -49,6 +49,11 @@ export const COLOR_THEMES = {
     accent: '#4F46E5',
     accentBg: '#EEF2FF',
   },
+  teal: {
+    label: '틸',
+    accent: '#0D9488',
+    accentBg: '#CCFBF1',
+  },
   emerald: {
     label: '에메랄드',
     accent: '#10B981',
@@ -58,6 +63,11 @@ export const COLOR_THEMES = {
     label: '앰버',
     accent: '#F59E0B',
     accentBg: '#FEF3C7',
+  },
+  blue: {
+    label: '블루',
+    accent: '#2563EB',
+    accentBg: '#DBEAFE',
   },
   rose: {
     label: '로즈',
