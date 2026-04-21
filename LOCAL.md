@@ -215,9 +215,39 @@ Step 5의 웹 배포·DOCX 변환은 외부 도구가 필요해요. **교재 생
 
 | 도구 | 용도 | Mac | Windows |
 |---|---|---|---|
-| MkDocs | 웹사이트 빌드 | `pip install mkdocs mkdocs-material` | 공식 인스톨러 |
+| Node.js 20+ | Astro Starlight 빌드 (기본 테마) | 이미 설치됨 | 이미 설치됨 |
+| MkDocs | MkDocs 테마로 빌드(선택) | `pip install mkdocs mkdocs-material` | 공식 인스톨러 |
 | Pandoc | Word 변환 | `brew install pandoc` | 공식 인스톨러 |
-| GitHub CLI | Pages 배포 | `brew install gh` | 공식 인스톨러 |
+| GitHub CLI | Pages 배포 (권장 인증) | `brew install gh` | 공식 인스톨러 |
+
+### GitHub Pages로 배포하기
+
+로컬 모드에서는 Google OAuth 대신 **`gh` CLI** 또는 **환경변수 `GITHUB_TOKEN`**으로 인증합니다.
+
+**방법 1: gh CLI (권장)**
+
+```bash
+gh auth login
+```
+대화형 프롬프트에서 `GitHub.com` → `HTTPS` → `Y` → `Login with a web browser` 순으로 선택하고, 화면에 뜬 8자리 코드를 브라우저에 붙여넣으면 됩니다.
+
+인증 후 Step 5의 "🚀 배포" 버튼을 바로 쓸 수 있어요. 배포 대상은 본인 계정의 공개 저장소로, URL은 `https://내_계정.github.io/저장소명/` 형식입니다.
+
+**방법 2: 개인 액세스 토큰(PAT)**
+
+`gh` CLI 설치가 번거로우면:
+
+1. https://github.com/settings/tokens/new 접속
+2. 권한: `repo`(전체), `workflow` 체크 → 토큰 생성
+3. 프로젝트 루트의 `.env`에 추가:
+   ```
+   GITHUB_TOKEN=ghp_...
+   ```
+4. `npm run dev` 재실행
+
+**우선순위**: `gh` CLI가 있으면 CLI 인증이 먼저 사용되고, 없으면 `GITHUB_TOKEN` env로 폴백됩니다.
+
+> **참고**: 공유 포트폴리오(`eduflow-portfolio`) 업데이트는 `PORTFOLIO_GITHUB_TOKEN` 환경변수가 별도로 있어야 동작합니다. 로컬 모드에서는 보통 미설정이라 GitHub Pages 배포만 성공하고 포트폴리오는 조용히 스킵됩니다(정상 동작).
 
 ---
 

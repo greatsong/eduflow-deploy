@@ -178,6 +178,28 @@ app.post('/api/auth/verify', async (req, res) => {
 // 구글 로그인 라우트 (인증 불필요, Deploy 전용)
 if (!LOCAL_MODE) {
   app.use('/api/auth', authRouter);
+} else {
+  // LOCAL_MODE: Google/GitHub OAuth 대신 로컬 gh CLI / 환경변수 기반 상태 반환
+  app.get('/api/auth/github/status', async (req, res) => {
+    try {
+      const { execa } = await import('execa');
+      // 1) gh CLI 인증 확인
+      try {
+        await execa('gh', ['auth', 'token']);
+        const { stdout } = await execa('gh', ['api', 'user', '--jq', '.login']);
+        const username = (stdout || '').trim();
+        if (username) {
+          return res.json({ connected: true, username, source: 'gh-cli', local: true });
+        }
+      } catch { /* gh 없거나 로그인 안 됨 */ }
+
+      // 2) env var 폴백
+      if (process.env.GITHUB_TOKEN) {
+        return res.json({ connected: true, username: 'env', source: 'env', local: true });
+      }
+    } catch { /* ignore */ }
+    res.json({ connected: false, local: true });
+  });
 }
 
 // 빌드된 사이트 미리보기 (인증 불필요 — iframe에서 접근)
