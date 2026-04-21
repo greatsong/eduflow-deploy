@@ -247,11 +247,14 @@ function suggestRepoNames(projectName, title = '') {
 }
 
 const COLOR_THEMES = [
-  { id: 'indigo', label: '인디고/퍼플', primary: 'indigo', accent: 'deep purple', colors: ['#4f46e5', '#7c3aed'], desc: '고급스럽고 세련된' },
-  { id: 'teal', label: '에메랄드/틸', primary: 'teal', accent: 'green', colors: ['#0d9488', '#10b981'], desc: '자연적이고 차분한' },
-  { id: 'amber', label: '앰버/오렌지', primary: 'deep orange', accent: 'amber', colors: ['#ea580c', '#f59e0b'], desc: '따뜻하고 친근한' },
-  { id: 'blue', label: '블루/스카이', primary: 'blue', accent: 'cyan', colors: ['#2563eb', '#0ea5e9'], desc: '신뢰감 있는 클래식' },
-  { id: 'rose', label: '로즈/핑크', primary: 'pink', accent: 'red', colors: ['#e11d48', '#f43f5e'], desc: '부드럽고 감성적인' },
+  { id: 'sky', label: '하늘색', colors: ['#0ea5e9', '#38bdf8'], desc: '밝고 시원한' },
+  { id: 'indigo', label: '인디고', colors: ['#4f46e5', '#7c3aed'], desc: '고급스럽고 세련된' },
+  { id: 'teal', label: '틸', colors: ['#0d9488', '#14b8a6'], desc: '자연적이고 차분한' },
+  { id: 'emerald', label: '에메랄드', colors: ['#10b981', '#34d399'], desc: '생기있고 산뜻한' },
+  { id: 'amber', label: '앰버', colors: ['#ea580c', '#f59e0b'], desc: '따뜻하고 친근한' },
+  { id: 'blue', label: '블루', colors: ['#2563eb', '#3b82f6'], desc: '신뢰감 있는 클래식' },
+  { id: 'rose', label: '로즈', colors: ['#e11d48', '#f43f5e'], desc: '부드럽고 감성적인' },
+  { id: 'slate', label: '슬레이트', colors: ['#64748b', '#94a3b8'], desc: '차분하고 미니멀한' },
 ];
 
 // GitHub 아이콘 SVG

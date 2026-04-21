@@ -304,15 +304,19 @@ export class Deployment {
       ? `${copyrightParts.join(' · ')} (EduFlow)`
       : 'EduFlow';
 
-    // 색상 테마 매핑
+    // 색상 테마 매핑 — UI의 8개 팔레트를 MkDocs Material 색상 이름으로 변환
+    // (MkDocs는 Material Design의 팔레트 키 이름 사용)
     const COLOR_THEMES = {
+      sky:     { primary: 'light blue', accent: 'cyan' },
       indigo:  { primary: 'indigo', accent: 'deep purple' },
       teal:    { primary: 'teal', accent: 'green' },
+      emerald: { primary: 'green', accent: 'light green' },
       amber:   { primary: 'deep orange', accent: 'amber' },
       blue:    { primary: 'blue', accent: 'cyan' },
       rose:    { primary: 'pink', accent: 'red' },
+      slate:   { primary: 'blue grey', accent: 'grey' },
     };
-    const ct = COLOR_THEMES[colorTheme] || COLOR_THEMES.indigo;
+    const ct = COLOR_THEMES[colorTheme] || COLOR_THEMES.sky;
 
     const config = `site_name: "${siteName}"
 site_description: "${desc}"
