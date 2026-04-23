@@ -9,6 +9,7 @@ import { ProgressManager } from '../services/progressManager.js';
 import { TemplateManager, TemplateComposer } from '../services/templateManager.js';
 import { ReferenceManager } from '../services/referenceManager.js';
 import { sanitizeId } from '../middleware/sanitize.js';
+import { requireProjectAccess } from '../middleware/projectAccess.js';
 import { TIER_CONFIG, TEMPLATE_VERSION } from '../../shared/constants.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +74,10 @@ router.post('/', asyncHandler(async (req, res) => {
 
   if (!name || !title) {
     return res.status(400).json({ message: '프로젝트 ID와 제목은 필수입니다' });
+  }
+  const safeName = sanitizeId(name);
+  if (!safeName || safeName !== name) {
+    return res.status(400).json({ message: '프로젝트 ID는 영문/숫자/한글, 하이픈, 언더스코어, 점만 사용할 수 있습니다.' });
   }
 
   // 프로젝트 한도 체크 (등급 기반)
@@ -320,6 +325,9 @@ router.get('/templates/samples/:templateId', asyncHandler(async (req, res) => {
 
   res.json({ templateId, title, content: sample });
 }));
+
+// 아래 :id 기반 프로젝트 라우트는 모두 소유자(또는 관리자)만 접근 가능
+router.use('/:id', requireProjectAccess(PROJECTS_DIR));
 
 // GET /api/projects/:id - 프로젝트 상세
 router.get('/:id', asyncHandler(async (req, res) => {

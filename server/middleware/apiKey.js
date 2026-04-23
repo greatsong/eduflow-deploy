@@ -3,8 +3,9 @@ import { ServerSettings } from '../services/settings.js';
 import { join } from 'path';
 import { TIER_CONFIG, PREMIUM_MODEL_TIERS } from '../../shared/constants.js';
 import { getProviderKeys, pickNextKey } from '../services/apiKeyPool.js';
+import { updateLimit } from '../services/rateLimiter.js';
+import { getJwtSecret } from '../services/jwtSecret.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'eduflow-default-secret-change-me';
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data');
 const serverSettings = new ServerSettings(join(DATA_DIR, 'settings.json'));
@@ -16,7 +17,7 @@ function isAdmin(req) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) return false;
-    const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+    const decoded = jwt.verify(authHeader.slice(7), getJwtSecret());
     return decoded?.email && ADMIN_EMAILS.includes(decoded.email);
   } catch {
     return false;
@@ -50,6 +51,9 @@ export async function requireApiKey(req, res, next) {
       const storedKey = poolKeys.length > 0 ? pickNextKey(provider, poolKeys) : '';
 
       keys[provider] = headerKey || storedKey || envKey || '';
+
+      const configuredKeyCount = poolKeys.length + (envKey ? 1 : 0);
+      updateLimit(provider, configuredKeyCount || 1);
     }
 
     // 하위 호환: 기존 x-api-key 헤더는 anthropic 키로 취급
@@ -114,6 +118,29 @@ export async function requireModelAccess(req, res, next) {
 
   const userTier = req.userTier || 'starter';
   const tierConfig = TIER_CONFIG[userTier];
+  const requestedModels = [
+    model,
+    judgeModel,
+    ...(Array.isArray(models) ? models : []),
+  ].filter(Boolean);
+
+  try {
+    const settings = await serverSettings.get();
+    const allowedModels = Array.isArray(settings.allowedModels) ? settings.allowedModels : [];
+    if (allowedModels.length > 0 && !isAdmin(req)) {
+      for (const mid of requestedModels) {
+        if (allowedModels.includes(mid)) continue;
+        const provider = getProviderFromModel(mid);
+        if (hasUserOwnKey(req, provider)) continue;
+        return res.status(403).json({
+          message: `${mid} 모델은 현재 운영 설정에서 허용되지 않았습니다.`,
+          code: 'MODEL_NOT_ALLOWED',
+        });
+      }
+    }
+  } catch {
+    // 설정 로드 실패 시 아래 등급 제한 검사로 계속 진행
+  }
 
   // Pro/Master는 모든 모델 사용 가능
   if (tierConfig?.allowPremiumModels) return next();

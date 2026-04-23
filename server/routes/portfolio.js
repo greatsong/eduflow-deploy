@@ -4,6 +4,8 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { sanitizeId } from '../middleware/sanitize.js';
+import { canAccessProject } from '../middleware/projectAccess.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECTS_DIR = process.env.PROJECTS_DIR || join(__dirname, '..', '..', 'projects');
@@ -182,6 +184,7 @@ router.get('/', asyncHandler(async (req, res) => {
   for (const name of projectDirs) {
     const data = await loadProjectData(join(PROJECTS_DIR, name), name);
     if (!data) continue;
+    if (!canAccessProject(req, data.config)) continue;
 
     const { partCount, chapterCount } = countChapters(data.toc);
     const progressStatus = getProgressStatus(data.progress, data.toc, data.chapterFiles);
@@ -232,15 +235,20 @@ router.get('/', asyncHandler(async (req, res) => {
 
 // GET /api/portfolio/:id/report - 특정 프로젝트 상세 리포트
 router.get('/:id/report', asyncHandler(async (req, res) => {
-  const projectPath = join(PROJECTS_DIR, req.params.id);
+  const projectId = sanitizeId(req.params.id);
+  if (!projectId) return res.status(400).json({ message: '잘못된 프로젝트 ID입니다.' });
+  const projectPath = join(PROJECTS_DIR, projectId);
 
   if (!existsSync(projectPath)) {
     return res.status(404).json({ message: '프로젝트를 찾을 수 없습니다' });
   }
 
-  const data = await loadProjectData(projectPath, req.params.id);
+  const data = await loadProjectData(projectPath, projectId);
   if (!data) {
     return res.status(404).json({ message: '유효하지 않은 프로젝트입니다' });
+  }
+  if (!canAccessProject(req, data.config)) {
+    return res.status(403).json({ message: '이 프로젝트에 접근할 권한이 없습니다.' });
   }
 
   res.json(data);
@@ -248,8 +256,21 @@ router.get('/:id/report', asyncHandler(async (req, res) => {
 
 // GET /api/portfolio/:id/chapter/:chapterId - 챕터 미리보기
 router.get('/:id/chapter/:chapterId', asyncHandler(async (req, res) => {
-  const docsPath = join(PROJECTS_DIR, req.params.id, 'docs');
-  const filePath = join(docsPath, `${req.params.chapterId}.md`);
+  const projectId = sanitizeId(req.params.id);
+  const chapterId = sanitizeId(req.params.chapterId);
+  if (!projectId || !chapterId) return res.status(400).json({ message: '잘못된 요청입니다.' });
+
+  const projectPath = join(PROJECTS_DIR, projectId);
+  const configPath = join(projectPath, 'config.json');
+  if (existsSync(configPath)) {
+    const config = JSON.parse(await readFile(configPath, 'utf-8'));
+    if (!canAccessProject(req, config)) {
+      return res.status(403).json({ message: '이 프로젝트에 접근할 권한이 없습니다.' });
+    }
+  }
+
+  const docsPath = join(projectPath, 'docs');
+  const filePath = join(docsPath, `${chapterId}.md`);
 
   if (!existsSync(filePath)) {
     return res.status(404).json({ message: '챕터 파일을 찾을 수 없습니다' });

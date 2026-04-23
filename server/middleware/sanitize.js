@@ -6,10 +6,12 @@ import { basename } from 'path';
  */
 export function sanitizeId(id) {
   if (!id || typeof id !== 'string') return '';
+  if (/[\\/]/.test(id)) return '';
   // 경로 구분자 제거 후 basename만 사용
   const clean = basename(id);
   // .. 포함 시 거부
   if (clean.includes('..')) return '';
+  if (!/^[a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ_.-]+$/.test(clean)) return '';
   return clean;
 }
 
@@ -18,6 +20,7 @@ export function sanitizeId(id) {
  */
 export function sanitizeFilename(filename) {
   if (!filename || typeof filename !== 'string') return '';
+  if (/[\\/]/.test(filename)) return '';
   const clean = basename(filename);
   if (clean.includes('..')) return '';
   return clean;

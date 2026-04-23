@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import { signToken, requireAuth } from '../middleware/auth.js';
 import { upsertUser, checkExistingUser } from './admin.js';
+import { createOAuthState, normalizeReturnTo, verifyOAuthState } from '../services/oauthState.js';
 
 const router = Router();
 
@@ -112,11 +113,12 @@ router.get('/github', requireAuth, (req, res) => {
     return res.status(500).json({ message: 'GitHub OAuth가 설정되지 않았습니다.' });
   }
 
-  // state에 사용자 정보를 인코딩하여 콜백에서 식별
-  const state = Buffer.from(JSON.stringify({
+  // state에 사용자 정보를 서명하여 콜백에서 식별 (변조 방지)
+  const state = createOAuthState({
     googleId: req.user.googleId,
-    returnTo: req.query.returnTo || '/',
-  })).toString('base64url');
+    returnTo: normalizeReturnTo(req.query.returnTo),
+    issuedAt: Date.now(),
+  });
 
   // 콜백 URL을 절대 경로로 생성
   const callbackUrl = GITHUB_CALLBACK_URL.startsWith('http')
@@ -145,17 +147,18 @@ router.get('/github/callback', async (req, res) => {
   }
 
   try {
-    // state 디코딩하여 사용자 정보 복원
-    let stateData;
-    try {
-      stateData = JSON.parse(Buffer.from(state, 'base64url').toString('utf-8'));
-    } catch {
+    // state 검증하여 사용자 정보 복원
+    const stateData = verifyOAuthState(state);
+    if (!stateData) {
       return res.status(400).send('잘못된 state 파라미터입니다.');
     }
 
     const { googleId, returnTo } = stateData;
     if (!googleId) {
       return res.status(400).send('사용자 식별 정보가 없습니다.');
+    }
+    if (stateData.issuedAt && Date.now() - stateData.issuedAt > 10 * 60 * 1000) {
+      return res.status(400).send('GitHub 인증 요청이 만료되었습니다. 다시 시도해주세요.');
     }
 
     // code → access_token 교환
@@ -204,6 +207,9 @@ router.get('/github/callback', async (req, res) => {
 
     console.log(`[EduFlow] GitHub 연동 완료: ${githubUser.login} (Google ID: ${googleId})`);
 
+    const appOrigin = process.env.APP_ORIGIN || `${req.protocol}://${req.get('host')}`;
+    const safeReturnTo = normalizeReturnTo(returnTo);
+
     // 팝업 창에서 부모 창으로 postMessage 전달 후 자동 닫기
     res.send(`<!DOCTYPE html>
 <html><head><title>GitHub 연동 완료</title></head>
@@ -213,11 +219,12 @@ router.get('/github/callback', async (req, res) => {
   if (window.opener) {
     window.opener.postMessage({
       type: 'github-auth-success',
+      returnTo: ${JSON.stringify(safeReturnTo)},
       user: {
         username: ${JSON.stringify(githubUser.login)},
         avatarUrl: ${JSON.stringify(githubUser.avatar_url || '')}
       }
-    }, '*');
+    }, ${JSON.stringify(appOrigin)});
   }
   setTimeout(() => window.close(), 1500);
 </script>

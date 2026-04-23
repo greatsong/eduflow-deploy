@@ -1,5 +1,5 @@
 import { readFile, writeFile, readdir, unlink, stat, mkdir } from 'fs/promises';
-import { join, extname, parse as parsePath } from 'path';
+import { basename, join, extname, parse as parsePath, resolve as resolvePath } from 'path';
 import { existsSync } from 'fs';
 
 // 지원 포맷 및 MIME 타입
@@ -111,13 +111,38 @@ export class ReferenceManager {
     }
   }
 
+  _safeFilename(filename) {
+    if (!filename || typeof filename !== 'string') {
+      throw new Error('잘못된 파일명입니다.');
+    }
+    if (/[/\\]/.test(filename)) {
+      throw new Error('잘못된 파일명입니다.');
+    }
+    const clean = basename(filename).replace(/[/\\]/g, '');
+    if (!clean || clean.includes('..')) {
+      throw new Error('잘못된 파일명입니다.');
+    }
+    return clean;
+  }
+
+  _safeFilePath(filename) {
+    const safeFilename = this._safeFilename(filename);
+    const base = resolvePath(this.referencesPath);
+    const filePath = resolvePath(base, safeFilename);
+    if (filePath !== base && !filePath.startsWith(`${base}/`)) {
+      throw new Error('잘못된 파일 경로입니다.');
+    }
+    return { safeFilename, filePath };
+  }
+
   async saveFile(buffer, filename) {
     await this.ensureDir();
-    let filePath = join(this.referencesPath, filename);
+    const safeFilename = this._safeFilename(filename);
+    let filePath = join(this.referencesPath, safeFilename);
 
     // 중복 파일명 처리
     if (existsSync(filePath)) {
-      const { name, ext } = parsePath(filename);
+      const { name, ext } = parsePath(safeFilename);
       let counter = 1;
       while (existsSync(filePath)) {
         filePath = join(this.referencesPath, `${name}_${counter}${ext}`);
@@ -162,7 +187,12 @@ export class ReferenceManager {
    * @returns {{ content: string|null, status: 'ok'|'parse_error'|'unsupported'|'not_found', format: string, error?: string }}
    */
   async readFileContent(filename) {
-    const filePath = join(this.referencesPath, filename);
+    let filePath;
+    try {
+      ({ filePath } = this._safeFilePath(filename));
+    } catch (e) {
+      return { content: null, status: 'not_found', format: '', error: e.message };
+    }
     if (!existsSync(filePath)) {
       return { content: null, status: 'not_found', format: '' };
     }
@@ -300,7 +330,12 @@ export class ReferenceManager {
    * 기존 호환 메서드 — 텍스트 파일만 읽기 (v1 호환)
    */
   async readFile(filename) {
-    const filePath = join(this.referencesPath, filename);
+    let filePath;
+    try {
+      ({ filePath } = this._safeFilePath(filename));
+    } catch {
+      return null;
+    }
     if (!existsSync(filePath)) return null;
 
     if (!TEXT_READABLE_EXTS.includes(extname(filename).toLowerCase())) return null;
@@ -314,7 +349,12 @@ export class ReferenceManager {
   }
 
   async deleteFile(filename) {
-    const filePath = join(this.referencesPath, filename);
+    let filePath;
+    try {
+      ({ filePath } = this._safeFilePath(filename));
+    } catch {
+      return false;
+    }
     if (!existsSync(filePath)) return false;
     try {
       await unlink(filePath);

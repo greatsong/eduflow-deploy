@@ -2,8 +2,8 @@ import jwt from 'jsonwebtoken';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { getJwtSecret } from '../services/jwtSecret.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'eduflow-default-secret-change-me';
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), 'data');
 const USERS_FILE = join(DATA_DIR, 'users.json');
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
@@ -28,7 +28,7 @@ export function requireAuth(req, res, next) {
 
   const token = authHeader.slice(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     req.user = decoded;
     next();
   } catch {
@@ -51,11 +51,21 @@ export async function requireApproved(req, res, next) {
 
   // users.json에서 사용자 상태 확인
   try {
-    if (!existsSync(USERS_FILE)) return next(); // 파일 없으면 통과 (초기 상태)
+    if (!existsSync(USERS_FILE)) {
+      return res.status(403).json({
+        message: '사용자 등록 정보가 없습니다. 다시 로그인 후 지원서를 완료해주세요.',
+        code: 'PROFILE_REQUIRED',
+      });
+    }
     const users = JSON.parse(await readFile(USERS_FILE, 'utf-8'));
     const user = users.find(u => u.googleId === req.user?.googleId);
 
-    if (!user) return next(); // 레지스트리에 없으면 통과 (비정상 케이스)
+    if (!user) {
+      return res.status(403).json({
+        message: '사용자 등록 정보가 없습니다. 지원서를 먼저 완료해주세요.',
+        code: 'PROFILE_REQUIRED',
+      });
+    }
 
     // 사용자 등급 세팅
     req.userTier = user.tier || 'starter';
@@ -73,7 +83,10 @@ export async function requireApproved(req, res, next) {
       });
     }
   } catch {
-    // 파일 읽기 실패 시 통과 (서비스 중단 방지)
+    return res.status(503).json({
+      message: '사용자 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.',
+      code: 'USER_STATUS_UNAVAILABLE',
+    });
   }
 
   if (!req.userTier) req.userTier = 'starter';
@@ -84,5 +97,5 @@ export async function requireApproved(req, res, next) {
  * JWT 토큰 생성 (구글 인증 후 발급)
  */
 export function signToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: '7d' });
 }

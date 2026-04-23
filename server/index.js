@@ -20,9 +20,11 @@ import { stat as fsStat } from 'fs/promises';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requireAuth, requireApproved } from './middleware/auth.js';
 import { sanitizeId } from './middleware/sanitize.js';
+import { requireProjectAccess } from './middleware/projectAccess.js';
 import { UserStore } from './services/userStore.js';
 import { TIER_CONFIG } from '../shared/constants.js';
 import { withLock } from './services/fileLock.js';
+import { getJwtSecret } from './services/jwtSecret.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 config({ path: path.resolve(__dirname, '..', '.env') }); // 루트 .env 로드
@@ -99,14 +101,13 @@ if (LOCAL_MODE) {
 } else {
   // Deploy 모드: Google OAuth + JWT + 등급 시스템
   app.get('/api/auth/status', async (req, res) => {
-    const JWT_SECRET = process.env.JWT_SECRET || 'eduflow-default-secret-change-me';
     const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
 
     let isAdminUser = false;
     try {
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith('Bearer ')) {
-        const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+        const decoded = jwt.verify(authHeader.slice(7), getJwtSecret());
         isAdminUser = decoded?.email && ADMIN_EMAILS.includes(decoded.email);
       }
     } catch { /* 인증 실패 무시 */ }
@@ -118,7 +119,7 @@ if (LOCAL_MODE) {
       try {
         const authHeader = req.headers.authorization;
         if (authHeader?.startsWith('Bearer ')) {
-          const decoded = jwt.verify(authHeader.slice(7), JWT_SECRET);
+          const decoded = jwt.verify(authHeader.slice(7), getJwtSecret());
           const usersFile = path.join(DATA_DIR, 'users.json');
           if (existsSync(usersFile)) {
             const { readFile: rf } = await import('fs/promises');
@@ -397,10 +398,11 @@ if (LOCAL_MODE) {
 app.use('/api/models', modelsRouter);
 
 // 더 구체적인 프로젝트 서브라우트를 먼저 등록
-app.use('/api/projects/:id/discussions', discussionsRouter);
-app.use('/api/projects/:id/toc', tocRouter);
-app.use('/api/projects/:id/chapters', chaptersRouter);
-app.use('/api/projects/:id/deploy', deployRouter);
+const requireProjectOwner = requireProjectAccess(PROJECTS_DIR_RESOLVED);
+app.use('/api/projects/:id/discussions', requireProjectOwner, discussionsRouter);
+app.use('/api/projects/:id/toc', requireProjectOwner, tocRouter);
+app.use('/api/projects/:id/chapters', requireProjectOwner, chaptersRouter);
+app.use('/api/projects/:id/deploy', requireProjectOwner, deployRouter);
 
 // 기본 프로젝트 라우트 (context, template-info, references 등 포함)
 app.use('/api/projects', projectsRouter);

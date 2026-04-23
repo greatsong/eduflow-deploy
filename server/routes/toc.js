@@ -12,7 +12,7 @@ import { ReferenceManager } from '../services/referenceManager.js';
 import { ConversationManager } from '../services/conversationManager.js';
 import { ProgressManager } from '../services/progressManager.js';
 import { TokenUsageManager } from '../services/tokenUsageManager.js';
-import { sanitizeId } from '../middleware/sanitize.js';
+import { sanitizeFilename, sanitizeId } from '../middleware/sanitize.js';
 import { registerSSE } from '../services/sseManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -479,11 +479,16 @@ router.post('/parse-file', fileUpload.single('file'), requireApiKey, requireMode
       // 임시 디렉터리에 저장 후 파싱 (ReferenceManager는 경로 기반)
       const tmpDir = join(projPath, '.tmp-parse');
       if (!existsSync(tmpDir)) await mkdir(tmpDir, { recursive: true });
-      const tmpPath = join(tmpDir, file.originalname);
+      const tmpFilename = sanitizeFilename(file.originalname);
+      if (!tmpFilename) {
+        sseSend({ type: 'error', message: '잘못된 파일명입니다.' });
+        return res.end();
+      }
+      const tmpPath = join(tmpDir, tmpFilename);
       await writeFile(tmpPath, file.buffer);
       const tmpRm = new ReferenceManager(projPath);
       tmpRm.referencesPath = tmpDir;
-      const parsed = await tmpRm.readFileContent(file.originalname);
+      const parsed = await tmpRm.readFileContent(tmpFilename);
       try { await (await import('fs/promises')).unlink(tmpPath); } catch { /* ignore */ }
       if (parsed.status !== 'ok' || !parsed.content) {
         sseSend({ type: 'error', message: `파싱 실패: ${parsed.error || '알 수 없는 오류'}` });
