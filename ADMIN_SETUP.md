@@ -106,7 +106,7 @@ fly secrets set ADMIN_EMAILS="you@yourschool.kr"
 
 ```
 체크하면 보이는 것:
-□ claude-opus-4-7        (비싸요, 중요한 교재용)
+□ claude-opus-4-8        (비싸요, 중요한 교재용)
 ☑ claude-sonnet-4-6      (기본 권장)
 ☑ claude-haiku-4-5       (빠르고 저렴)
 □ gpt-5-4                (비싸요)
