@@ -110,9 +110,8 @@ fly secrets set ADMIN_EMAILS="you@yourschool.kr"
 ☑ claude-sonnet-5        (기본 권장)
 ☑ claude-sonnet-4-6      (이전 표준)
 ☑ gpt-5.5                (범용)
-□ gpt-5.5-pro            (비싸요, 추론 특화)
 ☑ gemini-3.5-flash      (빠르고 저렴)
-☑ gemini-3.1-pro-preview
+☑ gemini-3.1-pro-preview (추론)
 ☑ solar-pro3            (한국어)
 ```
 
