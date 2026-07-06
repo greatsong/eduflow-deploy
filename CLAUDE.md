@@ -252,7 +252,8 @@ eduflow-deploy/
 - 관리자 API 키는 프로바이더별로 **공개(모든 사용자)** 또는 **비공개(관리자만)** 설정 가능
 
 ### 기본 모델
-- **기본값**: `claude-sonnet-4-6`
+- **대화·목차·피드백 기본값**: `claude-sonnet-5`
+- **챕터 생성 기본값**: `claude-opus-4-8`
 - 프로젝트 생성 시 `config.json`에 `claude_model` 저장
 
 ### 지원 프로바이더

@@ -289,7 +289,7 @@ projects/<name>/
 
 ## 모델 설정 (`model_config.json`)
 
-- 기본 모델: `claude-sonnet-4-6`
+- 기본 모델: `claude-sonnet-5` (대화·목차), `claude-opus-4-8` (챕터 생성)
 - 각 모델에 `input_price` / `output_price` (USD per 1M tokens) / `context` / `output_tpm` 정의
 - `default_settings`: `max_tokens`, `concurrent`
 

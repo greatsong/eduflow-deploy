@@ -102,17 +102,18 @@ fly secrets set ADMIN_EMAILS="you@yourschool.kr"
 
 ### 1-4. 허용 모델 (`allowedModels`)
 
-기본은 모든 등록 모델 허용이에요. 비용을 아끼고 싶으면 Haiku·Sonnet만 체크해서 Opus를 막을 수 있어요.
+기본은 모든 등록 모델 허용이에요. 비용을 아끼고 싶으면 Sonnet·Flash만 체크해서 Opus·Pro를 막을 수 있어요.
 
 ```
 체크하면 보이는 것:
 □ claude-opus-4-8        (비싸요, 중요한 교재용)
-☑ claude-sonnet-4-6      (기본 권장)
-☑ claude-haiku-4-5       (빠르고 저렴)
-□ gpt-5-4                (비싸요)
-☑ gpt-4-1                
-☑ gemini-3-1
-☑ solar-pro
+☑ claude-sonnet-5        (기본 권장)
+☑ claude-sonnet-4-6      (이전 표준)
+☑ gpt-5.5                (범용)
+□ gpt-5.5-pro            (비싸요, 추론 특화)
+☑ gemini-3.5-flash      (빠르고 저렴)
+☑ gemini-3.1-pro-preview
+☑ solar-pro3            (한국어)
 ```
 
 ---
@@ -172,7 +173,7 @@ fly secrets set ADMIN_EMAILS="you@school.kr,another@school.kr"
 
 ### 모델 추가·차단
 - 설정 탭의 허용 모델 체크박스로 즉시 반영
-- 차단된 모델을 이미 선택한 프로젝트는 기본 모델(`claude-sonnet-4-6`)로 폴백
+- 차단된 모델을 이미 선택한 프로젝트는 기본 모델(`claude-sonnet-5`)로 폴백
 
 ### 볼륨 백업
 ```bash
