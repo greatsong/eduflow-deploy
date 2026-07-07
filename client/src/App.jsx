@@ -425,9 +425,15 @@ export default function App() {
 
           const prevLimitKey = `eduflow_maxProjects_${user?.email}`;
           const prevTierKey = `eduflow_tier_${user?.email}`;
-          const prevLimit = parseInt(localStorage.getItem(prevLimitKey) || '1');
-          const prevTier = localStorage.getItem(prevTierKey) || 'starter';
-          if (mp > prevLimit || (userTier !== prevTier && TIER_CONFIG[userTier]?.maxProjects > TIER_CONFIG[prevTier]?.maxProjects)) {
+          const rawPrevLimit = localStorage.getItem(prevLimitKey);
+          const rawPrevTier = localStorage.getItem(prevTierKey);
+          // 이 기기에서 처음 확인하는 경우: 기준값만 조용히 저장하고 레벨업 안내는 띄우지 않는다.
+          // (기준값이 없으면 항상 1로 잡혀, 처음부터 상위 등급인 사용자에게 새 기기·시크릿창마다
+          //  '레벨업'이 매번 뜨던 문제를 방지 — 실제 등급 상승 때만 1회 축하)
+          const firstSight = rawPrevLimit === null && rawPrevTier === null;
+          const prevLimit = parseInt(rawPrevLimit || '1');
+          const prevTier = rawPrevTier || 'starter';
+          if (!firstSight && (mp > prevLimit || (userTier !== prevTier && TIER_CONFIG[userTier]?.maxProjects > TIER_CONFIG[prevTier]?.maxProjects))) {
             setLevelUpData({ oldLimit: prevLimit, newLimit: mp });
             localStorage.setItem(prevLimitKey, String(mp));
             localStorage.setItem(prevTierKey, userTier);
